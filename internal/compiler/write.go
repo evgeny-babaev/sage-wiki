@@ -546,6 +546,29 @@ type StripBrokenWikilinkStats struct {
 	LinksStripped   int
 }
 
+// MaybeStripBrokenWikilinks runs the post-Pass-3 wikilink sweep when the
+// config flag is enabled and logs the result. Use from every code path that
+// finalizes article writing so the strip doesn't get lost (issue #94).
+//
+// The helper is a wrapper around StripBrokenWikilinks; callers that want
+// custom logging or to act on the stats can call that directly.
+func MaybeStripBrokenWikilinks(projectDir, outputDir string, enabled bool) {
+	if !enabled {
+		return
+	}
+	stats, err := StripBrokenWikilinks(projectDir, outputDir)
+	if err != nil {
+		log.Warn("strip-broken-links failed", "error", err)
+		return
+	}
+	if stats.LinksStripped > 0 {
+		log.Info("stripped broken wikilinks",
+			"links_stripped", stats.LinksStripped,
+			"articles_edited", stats.ArticlesEdited,
+			"articles_scanned", stats.ArticlesScanned)
+	}
+}
+
 // StripBrokenWikilinks scans every article under <outputDir>/concepts and
 // rewrites those that contain [[wikilinks]] to non-existent concept files,
 // replacing the dead link with bare text. Intended to run once after Pass 3

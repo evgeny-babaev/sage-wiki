@@ -103,3 +103,41 @@ func TestStripBrokenWikilinks_IdempotentOnSecondRun(t *testing.T) {
 		t.Errorf("second run should be no-op; got stripped=%d edited=%d", stats.LinksStripped, stats.ArticlesEdited)
 	}
 }
+
+// TestMaybeStripBrokenWikilinks_DisabledByConfig verifies the helper short-
+// circuits when the config flag is off, leaving phantom links in place.
+// This is the opt-out path users need when they want to keep broken links
+// as a worklist for future compiles.
+func TestMaybeStripBrokenWikilinks_DisabledByConfig(t *testing.T) {
+	dir := t.TempDir()
+	conceptsDir := filepath.Join(dir, "wiki", "concepts")
+	os.MkdirAll(conceptsDir, 0755)
+	os.WriteFile(filepath.Join(conceptsDir, "x.md"), []byte("[[phantom]]"), 0644)
+
+	MaybeStripBrokenWikilinks(dir, "wiki", false)
+
+	got, _ := os.ReadFile(filepath.Join(conceptsDir, "x.md"))
+	if string(got) != "[[phantom]]" {
+		t.Errorf("disabled helper should not modify articles; got %q", string(got))
+	}
+}
+
+// TestMaybeStripBrokenWikilinks_RunsWhenEnabled verifies the wrapper actually
+// invokes the strip when enabled. Smoke test for the wiring used by all
+// post-Pass-3 call sites (Compile, ReExtract — issue #94).
+func TestMaybeStripBrokenWikilinks_RunsWhenEnabled(t *testing.T) {
+	dir := t.TempDir()
+	conceptsDir := filepath.Join(dir, "wiki", "concepts")
+	os.MkdirAll(conceptsDir, 0755)
+	os.WriteFile(filepath.Join(conceptsDir, "x.md"), []byte("[[phantom]] and bare text"), 0644)
+
+	MaybeStripBrokenWikilinks(dir, "wiki", true)
+
+	got, _ := os.ReadFile(filepath.Join(conceptsDir, "x.md"))
+	if strings.Contains(string(got), "[[phantom]]") {
+		t.Errorf("enabled helper should have stripped [[phantom]]; got %q", string(got))
+	}
+	if !strings.Contains(string(got), "phantom") {
+		t.Errorf("phantom text should remain (just without brackets); got %q", string(got))
+	}
+}

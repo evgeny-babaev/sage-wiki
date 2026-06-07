@@ -147,6 +147,12 @@ func ReExtract(projectDir string) (*CompileResult, error) {
 		}
 	}
 
+	// Post-compile sweep: strip [[wikilinks]] pointing at concepts that don't
+	// exist on disk. Re-extract rewrites articles via Pass 3 and would
+	// otherwise leave phantom links in place — same problem the strip pass
+	// solves for the main Compile() path. Issue #94 (follow-up to #90).
+	MaybeStripBrokenWikilinks(projectDir, cfg.Output, cfg.Compiler.StripBrokenLinksEnabled())
+
 	// Save manifest
 	if err := mf.Save(filepath.Join(projectDir, ".manifest.json")); err != nil {
 		return nil, fmt.Errorf("re-extract: save manifest: %w", err)

@@ -452,16 +452,7 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 	// LLM to use generous cross-references, but Pass 2 extracts concepts
 	// conservatively, so a wiki of a non-ML corpus can end up with the
 	// majority of links being phantom. Issue #90.
-	if cfg.Compiler.StripBrokenLinksEnabled() {
-		if stats, err := StripBrokenWikilinks(projectDir, cfg.Output); err != nil {
-			log.Warn("strip-broken-links failed", "error", err)
-		} else if stats.LinksStripped > 0 {
-			log.Info("stripped broken wikilinks",
-				"links_stripped", stats.LinksStripped,
-				"articles_edited", stats.ArticlesEdited,
-				"articles_scanned", stats.ArticlesScanned)
-		}
-	}
+	MaybeStripBrokenWikilinks(projectDir, cfg.Output, cfg.Compiler.StripBrokenLinksEnabled())
 
 	// Save manifest
 	if err := mf.Save(mfPath); err != nil {
