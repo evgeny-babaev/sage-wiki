@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -238,6 +239,47 @@ func TestCompileDiff(t *testing.T) {
 	text := result.Content[0].(mcplib.TextContent).Text
 	if text == "" {
 		t.Error("expected non-empty diff result")
+	}
+}
+
+// TestCompileDiffDetectsNewFiles verifies that compile_diff now reports
+// files added to a configured source directory after init (issue #51).
+// Previously the handler only counted manifest entries with status
+// "pending", so new files on disk were completely invisible.
+func TestCompileDiffDetectsNewFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := wiki.InitGreenfield(dir, "test", "gemini-2.5-flash"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	// Drop two real files into the raw/ source directory after init.
+	rawDir := filepath.Join(dir, "raw")
+	if err := os.WriteFile(filepath.Join(rawDir, "alpha.md"), []byte("# alpha\n"), 0644); err != nil {
+		t.Fatalf("write alpha: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(rawDir, "beta.md"), []byte("# beta\n"), 0644); err != nil {
+		t.Fatalf("write beta: %v", err)
+	}
+
+	srv, _ := NewServer(dir)
+	defer srv.Close()
+
+	result := srv.CallTool(context.Background(), "wiki_compile_diff", mcplib.CallToolRequest{
+		Params: mcplib.CallToolParams{
+			Name:      "wiki_compile_diff",
+			Arguments: map[string]any{},
+		},
+	})
+
+	if result.IsError {
+		t.Fatalf("error: %s", result.Content[0].(mcplib.TextContent).Text)
+	}
+
+	text := result.Content[0].(mcplib.TextContent).Text
+	for _, want := range []string{"Added: 2", "alpha.md", "beta.md", "New files:"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("compile_diff output missing %q\nfull output:\n%s", want, text)
+		}
 	}
 }
 
