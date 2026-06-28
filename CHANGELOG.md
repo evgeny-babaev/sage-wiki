@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## 0.1.10 — 2026-06-28
+
 ### Added
 
 - **Automated GitHub releases.** Pushing a `vX.Y.Z` tag now builds `sage-wiki`
