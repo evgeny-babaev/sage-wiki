@@ -8,7 +8,35 @@ import (
 	"testing"
 
 	"github.com/xoai/sage-wiki/internal/extract"
+	"github.com/xoai/sage-wiki/internal/llm"
 )
+
+// TestEmptyContentError covers the shared guard used by all four compile
+// content sites (single-chunk + image summarize, article writer, batch
+// summarize): empty content → error carrying the EmptyContentDetails hint;
+// non-empty → nil; nil response → error (defensive).
+func TestEmptyContentError(t *testing.T) {
+	err := emptyContentError(&llm.Response{FinishReason: "length", Reasoning: "thinking hard"}, "summary", "raw/x.md")
+	if err == nil {
+		t.Fatal("expected error for empty content")
+	}
+	if !strings.Contains(err.Error(), `empty summary for "raw/x.md"`) {
+		t.Errorf("error missing unit/name label: %v", err)
+	}
+	if !strings.Contains(err.Error(), "finish_reason=length") {
+		t.Errorf("error missing EmptyContentDetails hint: %v", err)
+	}
+
+	if err := emptyContentError(&llm.Response{Content: "hello"}, "summary", "raw/x.md"); err != nil {
+		t.Errorf("expected nil for non-empty content, got %v", err)
+	}
+	if err := emptyContentError(&llm.Response{Content: "   \n\t"}, "summary", "raw/x.md"); err == nil {
+		t.Error("expected error for whitespace-only content")
+	}
+	if err := emptyContentError(nil, "batch summary", "raw/y.md"); err == nil {
+		t.Error("expected error for nil response")
+	}
+}
 
 // buildSummaryFile writes a fake summary file with the given frontmatter hash and body.
 func buildSummaryFile(t *testing.T, dir, name, hash, body string) {

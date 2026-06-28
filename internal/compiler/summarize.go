@@ -225,6 +225,10 @@ func summarizeOne(
 			return result
 		}
 
+		if gErr := emptyContentError(resp, "summary", info.Path); gErr != nil {
+			result.Error = gErr
+			return result
+		}
 		summaryText = resp.Content
 	} else {
 		// Multi-chunk: summarize each chunk, then synthesize hierarchically
@@ -248,6 +252,20 @@ func summarizeOne(
 	}
 
 	return writeSummaryFile(projectDir, outputDir, info, content, summaryText, result, userTZ)
+}
+
+// emptyContentError returns a non-nil error when an LLM response carries no
+// usable text content, embedding finish_reason/reasoning diagnostics (via
+// EmptyContentDetails) so callers can tell reasoning-model truncation from
+// other failures. Returns nil when content is present. Shared by every compile
+// pass that turns an LLM response into a written file (single-chunk + image
+// summarize, article writer, batch summarize) so an empty response fails the
+// unit — and is retried next compile — instead of writing a hollow file.
+func emptyContentError(resp *llm.Response, unit, name string) error {
+	if resp != nil && strings.TrimSpace(resp.Content) != "" {
+		return nil
+	}
+	return fmt.Errorf("empty %s for %q: %s", unit, name, resp.EmptyContentDetails())
 }
 
 // validateSummary checks minimum quality thresholds for a generated summary.
@@ -311,6 +329,9 @@ func summarizeImage(projectDir string, info SourceInfo, client *llm.Client, mode
 		return "", fmt.Errorf("vision LLM: %w", err)
 	}
 
+	if gErr := emptyContentError(resp, "image summary", info.Path); gErr != nil {
+		return "", gErr
+	}
 	return resp.Content, nil
 }
 

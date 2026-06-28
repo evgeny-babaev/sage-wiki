@@ -776,6 +776,15 @@ func resumeBatch(
 			tracker.Track(bs.Pass, br.Response.Model, br.Response.Usage, true)
 		}
 
+		// Guard: an empty batch summary must fail the source (no validateSummary
+		// backstop on this path) rather than write a hollow summary file.
+		if gErr := emptyContentError(br.Response, "batch summary", path); gErr != nil {
+			result.Errors++
+			progress.ItemError(path, gErr)
+			state.Failed = append(state.Failed, FailedSource{Path: path, Error: gErr.Error()})
+			continue
+		}
+
 		// Write summary file
 		summaryText := br.Response.Content
 		summaryDir := filepath.Join(projectDir, cfg.Output, "summaries")

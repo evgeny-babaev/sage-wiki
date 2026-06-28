@@ -52,10 +52,8 @@ func TestCompileNothingToDo(t *testing.T) {
 }
 
 func TestCompileWithMockLLM(t *testing.T) {
-	callCount := 0
 	// Mock LLM server — returns different responses for different passes
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 
@@ -150,6 +148,81 @@ compiler:
 	changelogPath := filepath.Join(dir, "wiki", "CHANGELOG.md")
 	if _, err := os.Stat(changelogPath); os.IsNotExist(err) {
 		t.Error("CHANGELOG.md should exist")
+	}
+}
+
+// TestCompile_EmptyArticleNotWritten is the reproducing test for the
+// silent-hollow-write bug: when the article-writing LLM call returns empty
+// content (e.g. a reasoning model exhausting its token budget), the compiler
+// must NOT write a hollow article (frontmatter + empty body) to disk.
+func TestCompile_EmptyArticleNotWritten(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		messages, _ := body["messages"].([]any)
+		lastMsg := ""
+		if len(messages) > 0 {
+			if m, ok := messages[len(messages)-1].(map[string]any); ok {
+				lastMsg, _ = m["content"].(string)
+			}
+		}
+
+		var content string
+		switch {
+		case strings.Contains(lastMsg, "concept extraction system"):
+			content = `[{"name": "test-concept", "aliases": [], "sources": ["raw/article1.md"], "type": "concept"}]`
+		case strings.Contains(lastMsg, "wiki author writing a comprehensive article"):
+			content = "" // empty article — must NOT be written to disk
+		default:
+			content = "## Key claims\n\nThis document discusses the main concepts and findings related to the test subject matter.\n\n## Concepts\n\ntest-concept: A fundamental concept extracted from the source material."
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": content}}},
+			"model":   "gpt-4o-mini",
+			"usage":   map[string]int{"total_tokens": 100},
+		})
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	wiki.InitGreenfield(dir, "test", "gemini-2.5-flash")
+	cfgContent := `
+version: 1
+project: test
+sources:
+  - path: raw
+    type: auto
+    watch: true
+output: wiki
+api:
+  provider: openai
+  api_key: sk-test
+  base_url: ` + server.URL + `
+models:
+  summarize: gpt-4o-mini
+compiler:
+  max_parallel: 2
+  auto_commit: false
+  summary_max_tokens: 500
+  default_tier: 3
+`
+	os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(cfgContent), 0644)
+	os.WriteFile(filepath.Join(dir, "raw", "article1.md"), []byte("# Self-Attention\n\nSelf-attention computes contextual representations."), 0644)
+
+	result, err := Compile(dir, CompileOpts{})
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	// The article LLM returned empty — no hollow article file may exist, and the
+	// empty article must not be counted as written.
+	articlePath := filepath.Join(dir, "wiki", "concepts", "test-concept.md")
+	if _, statErr := os.Stat(articlePath); statErr == nil {
+		t.Errorf("hollow article was written despite empty LLM content: %s", articlePath)
+	}
+	if result.ArticlesWritten != 0 {
+		t.Errorf("empty article counted as written: ArticlesWritten=%d", result.ArticlesWritten)
 	}
 }
 

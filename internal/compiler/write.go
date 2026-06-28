@@ -163,6 +163,13 @@ func writeOneArticle(opts ArticleWriteOpts, concept ExtractedConcept, aliasMap m
 		return result
 	}
 
+	// Guard before writing: an empty/reasoning-truncated response must fail the
+	// concept (retried next compile) rather than write a hollow article.
+	if gErr := emptyContentError(resp, "article", concept.Name); gErr != nil {
+		result.Error = gErr
+		return result
+	}
+
 	articleContent := resp.Content
 
 	// Strip an outer code fence some LLMs wrap the whole response in — run first
