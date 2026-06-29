@@ -75,9 +75,21 @@ func Watch(projectDir string, debounceSeconds int, opts CompileOpts, coordinator
 	// On WSL2 with /mnt/ paths, fsnotify silently fails to deliver events
 	usePolling := fsErr != nil
 	if !usePolling {
-		// Detect if we're on a path where inotify won't work
-		for _, sp := range sourcePaths {
-			if strings.HasPrefix(sp, "/mnt/") {
+		// Detect if we're on a path where inotify won't work.
+		// Resolve symlinks so a symlinked source like raw -> /mnt/c/docs
+		// is recognized as a /mnt/ path (the unresolved project-dir
+		// relative path wouldn't start with /mnt/).
+		for _, src := range cfg.Sources {
+			var checkDir string
+			if filepath.IsAbs(src.Path) {
+				checkDir = src.Path
+			} else {
+				checkDir = filepath.Join(projectDir, src.Path)
+			}
+			if resolved, err := filepath.EvalSymlinks(checkDir); err == nil {
+				checkDir = resolved
+			}
+			if strings.HasPrefix(checkDir, "/mnt/") {
 				usePolling = true
 				break
 			}
