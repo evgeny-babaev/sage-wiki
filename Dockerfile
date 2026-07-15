@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 go build -tags webui -ldflags="-s -w" -o sage-wiki ./cmd/sage-
 
 # Stage 3: Runtime
 FROM alpine:3.21
-RUN apk add --no-cache git tzdata ca-certificates && \
+RUN apk add --no-cache git openssh-client tzdata ca-certificates && \
     adduser -D -u 1000 wiki
 COPY --from=builder /build/sage-wiki /usr/local/bin/sage-wiki
 
