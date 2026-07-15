@@ -266,6 +266,24 @@ func TestCommit(t *testing.T) {
 	}
 }
 
+func TestPushWithoutUpstreamReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	wiki.InitGreenfield(dir, "test", "gemini-2.5-flash")
+
+	srv, err := NewServer(dir)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer srv.Close()
+
+	result := srv.CallTool(context.Background(), "wiki_push", mcplib.CallToolRequest{
+		Params: mcplib.CallToolParams{Name: "wiki_push"},
+	})
+	if !result.IsError {
+		t.Fatal("push without an upstream should return an MCP error")
+	}
+}
+
 func TestCompileDiff(t *testing.T) {
 	dir := t.TempDir()
 	wiki.InitGreenfield(dir, "test", "gemini-2.5-flash")

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -80,6 +81,47 @@ func TestStatus(t *testing.T) {
 	}
 	if status == "" {
 		t.Error("expected non-empty status with untracked file")
+	}
+}
+
+func TestPush(t *testing.T) {
+	if !IsAvailable() {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "test@test.com")
+	runGit(t, dir, "config", "user.name", "Test")
+	runGit(t, dir, "init", "--bare", remote)
+	runGit(t, dir, "remote", "add", "origin", remote)
+
+	if err := os.WriteFile(filepath.Join(dir, "test.txt"), []byte("hello"), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+	if err := AutoCommit(dir, "test push"); err != nil {
+		t.Fatalf("AutoCommit: %v", err)
+	}
+	branch, err := execGit("-C", dir, "branch", "--show-current")
+	if err != nil {
+		t.Fatalf("get current branch: %v", err)
+	}
+	runGit(t, dir, "push", "--set-upstream", "origin", strings.TrimSpace(branch))
+
+	if err := os.WriteFile(filepath.Join(dir, "second.txt"), []byte("world"), 0644); err != nil {
+		t.Fatalf("write second file: %v", err)
+	}
+	if err := AutoCommit(dir, "second push"); err != nil {
+		t.Fatalf("AutoCommit second: %v", err)
+	}
+	if err := Push(dir); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	remoteHead, err := execGit("--git-dir", remote, "rev-parse", strings.TrimSpace(branch))
+	if err != nil || strings.TrimSpace(remoteHead) == "" {
+		t.Fatalf("remote branch was not pushed: %s: %v", remoteHead, err)
 	}
 }
 

@@ -144,6 +144,7 @@ func (s *Server) CallTool(ctx context.Context, name string, req mcp.CallToolRequ
 		"wiki_add_ontology":   s.handleAddOntology,
 		"wiki_learn":          s.handleLearn,
 		"wiki_commit":         s.handleCommit,
+		"wiki_push":           s.handlePush,
 		"wiki_compile_diff":   s.handleCompileDiff,
 		"wiki_compile":        s.handleCompile,
 		"wiki_lint":           s.handleLint,

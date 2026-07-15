@@ -79,6 +79,19 @@ func AutoCommit(dir string, message string) error {
 	return Commit(dir, message)
 }
 
+// Push publishes the current branch to its configured upstream.
+func Push(dir string) error {
+	if !IsAvailable() || !IsRepo(dir) {
+		return nil
+	}
+	cmd := exec.Command("git", "-C", dir, "push")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git.Push: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 // Status returns the short status output.
 func Status(dir string) (string, error) {
 	if !IsAvailable() {

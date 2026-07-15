@@ -96,6 +96,13 @@ func (s *Server) registerWriteTools() {
 	)
 
 	s.mcp.AddTool(
+		mcplib.NewTool("wiki_push",
+			mcplib.WithDescription("Push committed wiki changes to the current branch's configured Git upstream."),
+		),
+		s.handlePush,
+	)
+
+	s.mcp.AddTool(
 		mcplib.NewTool("wiki_compile_diff",
 			mcplib.WithDescription("Show added/modified/removed source files compared to the manifest."),
 		),
@@ -599,6 +606,13 @@ func (s *Server) handleCommit(ctx context.Context, req mcplib.CallToolRequest) (
 		return errorResult(fmt.Sprintf("commit failed: %v", err)), nil
 	}
 	return textResult(fmt.Sprintf("Committed: %s", message)), nil
+}
+
+func (s *Server) handlePush(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if err := gitpkg.Push(s.projectDir); err != nil {
+		return errorResult(fmt.Sprintf("push failed: %v", err)), nil
+	}
+	return textResult("Pushed committed wiki changes"), nil
 }
 
 func (s *Server) handleCompileDiff(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
