@@ -2,7 +2,6 @@ package git
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -116,25 +115,9 @@ func PushWithGitHubToken(dir, token string) error {
 		return fmt.Errorf("git.Push: current HEAD is detached")
 	}
 
-	tempDir, err := os.MkdirTemp("", "sage-git-askpass-")
-	if err != nil {
-		return fmt.Errorf("git.Push: create askpass directory: %w", err)
-	}
-	defer os.RemoveAll(tempDir)
-	askpass := filepath.Join(tempDir, "askpass.sh")
-	script := `#!/bin/sh
-case "$1" in
-  *Username*) printf '%s\n' 'x-access-token' ;;
-  *) printf '%s\n' "$SAGE_WIKI_GIT_TOKEN" ;;
-esac
-`
-	if err := os.WriteFile(askpass, []byte(script), 0700); err != nil {
-		return fmt.Errorf("git.Push: write askpass: %w", err)
-	}
-
-	cmd := exec.Command("git", "-C", dir, "push", remote, "HEAD:refs/heads/"+branch)
-	cmd.Env = append(os.Environ(),
-		"GIT_ASKPASS="+askpass,
+	helper := `!f() { if [ "$1" = get ]; then printf '%s\n' 'username=x-access-token' "password=$SAGE_WIKI_GIT_TOKEN"; fi; }; f`
+	cmd := exec.Command("git", "-c", "credential.helper="+helper, "-C", dir, "push", remote, "HEAD:refs/heads/"+branch)
+	cmd.Env = append(cmd.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
 		"SAGE_WIKI_GIT_TOKEN="+token,
 	)
