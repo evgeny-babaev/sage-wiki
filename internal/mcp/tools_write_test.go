@@ -62,6 +62,54 @@ func TestWriteSummary(t *testing.T) {
 	}
 }
 
+func TestPurposeTools(t *testing.T) {
+	dir := t.TempDir()
+	wiki.InitGreenfield(dir, "test", "gemini-2.5-flash")
+
+	srv, err := NewServer(dir)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer srv.Close()
+
+	content := "# Purpose\n\nHelp the team make product decisions."
+	setResult := srv.CallTool(context.Background(), "wiki_set_purpose", mcplib.CallToolRequest{
+		Params: mcplib.CallToolParams{
+			Name:      "wiki_set_purpose",
+			Arguments: map[string]any{"content": content},
+		},
+	})
+	if setResult.IsError {
+		t.Fatalf("set purpose: %s", setResult.Content[0].(mcplib.TextContent).Text)
+	}
+
+	stored, err := os.ReadFile(filepath.Join(dir, "purpose.md"))
+	if err != nil {
+		t.Fatalf("read purpose.md: %v", err)
+	}
+	if string(stored) != content+"\n" {
+		t.Fatalf("unexpected purpose.md: %q", stored)
+	}
+
+	getResult := srv.CallTool(context.Background(), "wiki_get_purpose", mcplib.CallToolRequest{
+		Params: mcplib.CallToolParams{Name: "wiki_get_purpose"},
+	})
+	if getResult.IsError {
+		t.Fatalf("get purpose: %s", getResult.Content[0].(mcplib.TextContent).Text)
+	}
+	text := getResult.Content[0].(mcplib.TextContent).Text
+	var response struct {
+		Enabled bool   `json:"enabled"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
+		t.Fatalf("parse get purpose response: %v", err)
+	}
+	if !response.Enabled || response.Content != content+"\n" {
+		t.Fatalf("unexpected get purpose response: %+v", response)
+	}
+}
+
 func TestWriteArticle(t *testing.T) {
 	dir := t.TempDir()
 	wiki.InitGreenfield(dir, "test", "gemini-2.5-flash")

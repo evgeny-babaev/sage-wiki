@@ -29,6 +29,14 @@ import (
 
 func (s *Server) registerWriteTools() {
 	s.mcp.AddTool(
+		mcplib.NewTool("wiki_set_purpose",
+			mcplib.WithDescription("Replace the project-level purpose.md used by summarize, extract, and write. The next full compile rebuilds purpose-dependent outputs."),
+			mcplib.WithString("content", mcplib.Required(), mcplib.Description("Complete Markdown content for purpose.md (max 100KB)")),
+		),
+		s.handleSetPurpose,
+	)
+
+	s.mcp.AddTool(
 		mcplib.NewTool("wiki_add_source",
 			mcplib.WithDescription("Add a source file to a source folder and update the manifest."),
 			mcplib.WithString("path", mcplib.Required(), mcplib.Description("File path relative to project root")),
@@ -112,6 +120,62 @@ func (s *Server) registerWriteTools() {
 		),
 		s.handleCompileTopic,
 	)
+}
+
+func (s *Server) handleSetPurpose(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	args := req.GetArguments()
+	content, ok := args["content"].(string)
+	if !ok {
+		return errorResult("content is required"), nil
+	}
+	if len([]byte(content)) > 100*1024 {
+		return errorResult("content exceeds 100KB limit"), nil
+	}
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+
+	path := filepath.Join(s.projectDir, compiler.PurposeFilename)
+	tmp, err := os.CreateTemp(s.projectDir, ".purpose-*.tmp")
+	if err != nil {
+		return errorResult(fmt.Sprintf("create purpose temp file: %v", err)), nil
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0644); err != nil {
+		tmp.Close()
+		return errorResult(fmt.Sprintf("set purpose permissions: %v", err)), nil
+	}
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		return errorResult(fmt.Sprintf("write purpose: %v", err)), nil
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return errorResult(fmt.Sprintf("sync purpose: %v", err)), nil
+	}
+	if err := tmp.Close(); err != nil {
+		return errorResult(fmt.Sprintf("close purpose: %v", err)), nil
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+			return errorResult(fmt.Sprintf("replace purpose: %v", removeErr)), nil
+		}
+		if err := os.Rename(tmpPath, path); err != nil {
+			return errorResult(fmt.Sprintf("replace purpose: %v", err)), nil
+		}
+	}
+
+	purpose, err := compiler.LoadPurpose(s.projectDir)
+	if err != nil {
+		return errorResult(err.Error()), nil
+	}
+	data, _ := json.MarshalIndent(map[string]any{
+		"updated": true,
+		"enabled": purpose.Enabled(),
+		"hash":    purpose.Hash,
+	}, "", "  ")
+	return textResult(string(data)), nil
 }
 
 func (s *Server) handleAddSource(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

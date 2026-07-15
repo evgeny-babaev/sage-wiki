@@ -131,23 +131,25 @@ func (s *Server) OntStore() *ontology.Store { return s.ont }
 // CallTool invokes a tool handler by name. Used for testing.
 func (s *Server) CallTool(ctx context.Context, name string, req mcp.CallToolRequest) *mcp.CallToolResult {
 	handlers := map[string]func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error){
-		"wiki_search":        s.handleSearch,
-		"wiki_read":          s.handleRead,
-		"wiki_status":        s.handleStatus,
+		"wiki_search":         s.handleSearch,
+		"wiki_read":           s.handleRead,
+		"wiki_status":         s.handleStatus,
 		"wiki_ontology_query": s.handleOntologyQuery,
-		"wiki_list":          s.handleList,
-		"wiki_add_source":    s.handleAddSource,
-		"wiki_write_summary": s.handleWriteSummary,
-		"wiki_write_article": s.handleWriteArticle,
-		"wiki_add_ontology":  s.handleAddOntology,
-		"wiki_learn":         s.handleLearn,
-		"wiki_commit":        s.handleCommit,
-		"wiki_compile_diff":  s.handleCompileDiff,
-		"wiki_compile":       s.handleCompile,
-		"wiki_lint":          s.handleLint,
-		"wiki_capture":       s.handleCapture,
-		"wiki_compile_topic": s.handleCompileTopic,
-		"wiki_provenance":    s.handleProvenance,
+		"wiki_list":           s.handleList,
+		"wiki_get_purpose":    s.handleGetPurpose,
+		"wiki_set_purpose":    s.handleSetPurpose,
+		"wiki_add_source":     s.handleAddSource,
+		"wiki_write_summary":  s.handleWriteSummary,
+		"wiki_write_article":  s.handleWriteArticle,
+		"wiki_add_ontology":   s.handleAddOntology,
+		"wiki_learn":          s.handleLearn,
+		"wiki_commit":         s.handleCommit,
+		"wiki_compile_diff":   s.handleCompileDiff,
+		"wiki_compile":        s.handleCompile,
+		"wiki_lint":           s.handleLint,
+		"wiki_capture":        s.handleCapture,
+		"wiki_compile_topic":  s.handleCompileTopic,
+		"wiki_provenance":     s.handleProvenance,
 	}
 	if h, ok := handlers[name]; ok {
 		r, _ := h(ctx, req)
@@ -204,6 +206,13 @@ func (s *Server) registerReadTools() {
 			mcp.WithString("type", mcp.Description("Filter by entity type: concept, technique, source, claim, artifact")),
 		),
 		s.handleList,
+	)
+
+	s.mcp.AddTool(
+		mcp.NewTool("wiki_get_purpose",
+			mcp.WithDescription("Read the wiki purpose and its effective compilation hash."),
+		),
+		s.handleGetPurpose,
 	)
 
 	// wiki_provenance
@@ -453,6 +462,25 @@ func (s *Server) handleList(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		"concept_count": mf.ConceptCount(),
 	}
 
+	data, _ := json.MarshalIndent(result, "", "  ")
+	return textResult(string(data)), nil
+}
+
+func (s *Server) handleGetPurpose(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	path := filepath.Join(s.projectDir, compiler.PurposeFilename)
+	content, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return errorResult(fmt.Sprintf("read purpose: %v", err)), nil
+	}
+	purpose, err := compiler.LoadPurpose(s.projectDir)
+	if err != nil {
+		return errorResult(err.Error()), nil
+	}
+	result := map[string]any{
+		"enabled": purpose.Enabled(),
+		"hash":    purpose.Hash,
+		"content": string(content),
+	}
 	data, _ := json.MarshalIndent(result, "", "  ")
 	return textResult(string(data)), nil
 }

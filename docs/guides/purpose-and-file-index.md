@@ -28,6 +28,8 @@ Use the wiki purpose as the selection and emphasis criterion for this task. Prio
 
 Missing, empty, and comment-only `purpose.md` files disable purpose-aware behavior. Existing projects without the file keep their previous prompt behavior.
 
+Remote agents can manage the file through MCP: `wiki_get_purpose` returns its content and effective hash, while `wiki_set_purpose` atomically replaces the complete Markdown file. Updating the file does not compile automatically; run a full compile when the new purpose should take effect.
+
 ## Purpose Changes
 
 The manifest stores a hash of the effective purpose. When it changes or the file is removed, the next compile:
