@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -90,6 +91,76 @@ func Push(dir string) error {
 		return fmt.Errorf("git.Push: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
+}
+
+// PushWithGitHubToken publishes the current branch without persisting the token.
+// It is intended for isolated runtimes where the repository's SSH credential is
+// deliberately not mounted into the process container.
+func PushWithGitHubToken(dir, token string) error {
+	if token == "" {
+		return Push(dir)
+	}
+	if !IsAvailable() || !IsRepo(dir) {
+		return nil
+	}
+	remote, err := githubHTTPSRemote(dir)
+	if err != nil {
+		return err
+	}
+	branchOut, err := exec.Command("git", "-C", dir, "branch", "--show-current").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git.Push: resolve current branch: %s: %w", strings.TrimSpace(string(branchOut)), err)
+	}
+	branch := strings.TrimSpace(string(branchOut))
+	if branch == "" {
+		return fmt.Errorf("git.Push: current HEAD is detached")
+	}
+
+	tempDir, err := os.MkdirTemp("", "sage-git-askpass-")
+	if err != nil {
+		return fmt.Errorf("git.Push: create askpass directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+	askpass := filepath.Join(tempDir, "askpass.sh")
+	script := `#!/bin/sh
+case "$1" in
+  *Username*) printf '%s\n' 'x-access-token' ;;
+  *) printf '%s\n' "$SAGE_WIKI_GIT_TOKEN" ;;
+esac
+`
+	if err := os.WriteFile(askpass, []byte(script), 0700); err != nil {
+		return fmt.Errorf("git.Push: write askpass: %w", err)
+	}
+
+	cmd := exec.Command("git", "-C", dir, "push", remote, "HEAD:refs/heads/"+branch)
+	cmd.Env = append(os.Environ(),
+		"GIT_ASKPASS="+askpass,
+		"GIT_TERMINAL_PROMPT=0",
+		"SAGE_WIKI_GIT_TOKEN="+token,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git.Push: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func githubHTTPSRemote(dir string) (string, error) {
+	out, err := exec.Command("git", "-C", dir, "remote", "get-url", "--push", "origin").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git.Push: resolve origin: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	remote := strings.TrimSpace(string(out))
+	switch {
+	case strings.HasPrefix(remote, "git@github.com:"):
+		return "https://github.com/" + strings.TrimPrefix(remote, "git@github.com:"), nil
+	case strings.HasPrefix(remote, "ssh://git@github.com/"):
+		return "https://github.com/" + strings.TrimPrefix(remote, "ssh://git@github.com/"), nil
+	case strings.HasPrefix(remote, "https://github.com/"):
+		return remote, nil
+	default:
+		return "", fmt.Errorf("git.Push: token authentication supports github.com origins only")
+	}
 }
 
 // Status returns the short status output.

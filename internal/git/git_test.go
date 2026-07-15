@@ -125,6 +125,23 @@ func TestPush(t *testing.T) {
 	}
 }
 
+func TestGitHubHTTPSRemote(t *testing.T) {
+	if !IsAvailable() {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "remote", "add", "origin", "git@github.com:owner/wiki.git")
+
+	remote, err := githubHTTPSRemote(dir)
+	if err != nil {
+		t.Fatalf("githubHTTPSRemote: %v", err)
+	}
+	if remote != "https://github.com/owner/wiki.git" {
+		t.Fatalf("unexpected remote: %s", remote)
+	}
+}
+
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := append([]string{"-C", dir}, args...)

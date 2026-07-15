@@ -98,6 +98,7 @@ func (s *Server) registerWriteTools() {
 	s.mcp.AddTool(
 		mcplib.NewTool("wiki_push",
 			mcplib.WithDescription("Push committed wiki changes to the current branch's configured Git upstream."),
+			mcplib.WithString("github_token", mcplib.Description("Optional transient GitHub token when the runtime has no mounted SSH credential; never persisted")),
 		),
 		s.handlePush,
 	)
@@ -609,7 +610,8 @@ func (s *Server) handleCommit(ctx context.Context, req mcplib.CallToolRequest) (
 }
 
 func (s *Server) handlePush(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	if err := gitpkg.Push(s.projectDir); err != nil {
+	token, _ := req.GetArguments()["github_token"].(string)
+	if err := gitpkg.PushWithGitHubToken(s.projectDir, token); err != nil {
 		return errorResult(fmt.Sprintf("push failed: %v", err)), nil
 	}
 	return textResult("Pushed committed wiki changes"), nil
