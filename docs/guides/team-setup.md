@@ -82,12 +82,14 @@ shared Git access.
 ```
 team-wiki/
 ├── config.yaml
+├── purpose.md               # optional shared compilation objective
 ├── raw/                    # shared source documents
 │   ├── architecture/
 │   ├── meeting-notes/
 │   ├── onboarding/
 │   └── runbooks/
 ├── wiki/                   # compiled output (git-tracked)
+│   ├── index.md            # generated file graph entry point
 │   ├── concepts/
 │   ├── summaries/
 │   └── outputs/
@@ -141,7 +143,7 @@ git add -A && git commit -m "update" && git push
 ```
 
 The database is rebuilt from the compiled wiki on each `sage-wiki compile`.
-The wiki/ directory and .manifest.json are tracked — they contain the
+The purpose.md, wiki/ directory, and .manifest.json are tracked — they contain the
 compiled output that teammates read.
 
 ### Pattern B: Shared Server with Web UI

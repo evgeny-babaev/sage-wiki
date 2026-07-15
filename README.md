@@ -11,6 +11,7 @@ Drop in your papers, articles, and notes. sage-wiki compiles them into a structu
 - **Your sources in, a wiki out.** Add documents to a folder. The LLM reads, summarizes, extracts concepts, and writes interconnected articles.
 - **Scales to 100K+ documents.** Tiered compilation indexes everything fast, compiles only what matters. A 100K vault is searchable in hours, not months.
 - **Compounding knowledge.** Every new source enriches existing articles. The wiki gets smarter as it grows.
+- **Purpose-aware compilation.** An optional `purpose.md` makes summarization, concept extraction, and article writing optimize for the wiki's intended decisions and outcomes.
 - **Works with your tools.** Opens natively in Obsidian. Connects to any LLM agent via MCP. Runs as a single binary — works with API keys or your existing LLM subscription.
 - **Ask your wiki questions.** Enhanced search with chunk-level indexing, LLM query expansion, and re-ranking. Ask natural language questions and get cited answers.
 - **Compile on demand.** Agents can trigger compilation for specific topics via MCP. Search results signal when uncompiled sources are available.
@@ -33,6 +34,7 @@ _Dots on the outer boundary represent summaries of all documents in the knowledg
 | [Self-Hosted Server](docs/guides/self-hosted-server.md) | Docker Compose, Syncthing, reverse proxy, VPS deployment |
 | [Configurable Relations](docs/guides/configurable-relations.md) | Custom ontology types, multilingual synonyms, type restrictions |
 | [Local Models](docs/guides/local-models.md) | Ollama setup, GPU/CPU routing, per-pass model config |
+| [Purpose and File Index](docs/guides/purpose-and-file-index.md) | Goal-directed compilation, invalidation rules, and `wiki/index.md` |
 
 ## Install
 
@@ -76,6 +78,7 @@ Need a format not listed here? sage-wiki supports **external parsers** — scrip
 ```bash
 mkdir my-wiki && cd my-wiki
 sage-wiki init
+# Optional: edit purpose.md to define what this wiki should optimize for
 # Add sources to raw/
 cp ~/papers/*.pdf raw/papers/
 cp ~/articles/*.md raw/articles/
@@ -99,6 +102,7 @@ sage-wiki compile --watch
 ```bash
 cd ~/Documents/MyVault
 sage-wiki init --vault
+# Optional: edit purpose.md to define what this wiki should optimize for
 # Edit config.yaml to set source/ignore folders, add api key, pick LLMs
 # First Compile
 sage-wiki compile

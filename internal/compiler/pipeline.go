@@ -54,13 +54,14 @@ type CompileResult struct {
 
 // CompileState tracks progress for checkpoint/resume (ADR-018).
 type CompileState struct {
-	CompileID string         `json:"compile_id"`
-	StartedAt string         `json:"started_at"`
-	Pass      int            `json:"pass"`
-	Completed []string       `json:"completed"`
-	Pending   []string       `json:"pending"`
-	Failed    []FailedSource `json:"failed,omitempty"`
-	Batch     *BatchState    `json:"batch,omitempty"` // non-nil when batch is in flight
+	CompileID   string         `json:"compile_id"`
+	PurposeHash string         `json:"purpose_hash,omitempty"`
+	StartedAt   string         `json:"started_at"`
+	Pass        int            `json:"pass"`
+	Completed   []string       `json:"completed"`
+	Pending     []string       `json:"pending"`
+	Failed      []FailedSource `json:"failed,omitempty"`
+	Batch       *BatchState    `json:"batch,omitempty"` // non-nil when batch is in flight
 }
 
 // BatchState tracks an in-flight batch job for checkpoint/resume.
@@ -106,6 +107,9 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compile: load config: %w", err)
 	}
+	if err := recoverPendingPurposeBackup(projectDir); err != nil {
+		return nil, fmt.Errorf("compile: recover interrupted purpose rebuild: %w", err)
+	}
 
 	// Load user prompt overrides if prompts/ directory exists
 	promptsDir := filepath.Join(projectDir, "prompts")
@@ -119,6 +123,11 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compile: load manifest: %w", err)
 	}
+	purpose, err := LoadPurpose(projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("compile: %w", err)
+	}
+	purposeChanged := mf.PurposeHash != purpose.Hash
 
 	// Check for existing checkpoint
 	statePath := filepath.Join(projectDir, ".sage", "compile-state.json")
@@ -129,10 +138,17 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 			log.Info("resuming from checkpoint", "compile_id", state.CompileID, "pass", state.Pass, "completed", len(state.Completed))
 		}
 	}
+	if state != nil && state.PurposeHash != purpose.Hash {
+		log.Info("discarding checkpoint after purpose change", "checkpoint_purpose_hash", state.PurposeHash, "purpose_hash", purpose.Hash)
+		state = nil
+		if !opts.DryRun {
+			_ = os.Remove(statePath)
+		}
+	}
 
 	// Pass 0: Diff
 	log.Info("Pass 0: computing diff")
-	diff, err := Diff(projectDir, cfg, mf)
+	diff, err := Diff(projectDir, cfg, mf, purposeChanged)
 	if err != nil {
 		return nil, fmt.Errorf("compile: diff: %w", err)
 	}
@@ -144,6 +160,17 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 	progress := NewProgress()
 
 	if result.Added == 0 && result.Modified == 0 && result.Removed == 0 {
+		if !opts.DryRun {
+			if purposeChanged {
+				mf.PurposeHash = purpose.Hash
+				if err := mf.Save(mfPath); err != nil {
+					return nil, fmt.Errorf("compile: save manifest: %w", err)
+				}
+			}
+			if err := GenerateWikiIndex(projectDir, cfg, mf, purpose); err != nil {
+				return nil, fmt.Errorf("compile: generate wiki index: %w", err)
+			}
+		}
 		fmt.Fprintln(os.Stderr, "✓ Nothing to compile — wiki is up to date.")
 		return result, nil
 	}
@@ -180,7 +207,7 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 		if client.ProviderName() != state.Batch.Provider {
 			return nil, fmt.Errorf("compile: provider changed from %s to %s since batch was submitted — clear checkpoint with --fresh or switch back", state.Batch.Provider, client.ProviderName())
 		}
-		return resumeBatch(projectDir, client, cfg, mf, state, statePath, tracker, opts)
+		return resumeBatch(projectDir, client, cfg, mf, state, statePath, tracker, opts, purpose)
 	}
 
 	// Subscription auth: disable batch mode (subscription tokens lack batch API access)
@@ -210,10 +237,32 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 		}
 	}
 	if useBatch {
+		if purposeChanged {
+			useBatch = false
+			log.Info("purpose changed; using standard mode for full recompilation")
+			fmt.Fprintln(os.Stderr, "Purpose changed; using standard mode for full recompilation.")
+		}
+	}
+	if useBatch {
 		if !client.SupportsBatch() {
 			return nil, fmt.Errorf("compile: provider %s does not support batch API", cfg.API.Provider)
 		}
-		return submitBatch(projectDir, client, cfg, mf, diff, statePath, tracker)
+		return submitBatch(projectDir, client, cfg, mf, diff, statePath, tracker, purpose)
+	}
+
+	var purposeBackup *purposeRecompileBackup
+	if purposeChanged {
+		purposeBackup, err = createPurposeBackup(projectDir, cfg.Output)
+		if err != nil {
+			return nil, fmt.Errorf("compile: backup before purpose rebuild: %w", err)
+		}
+		defer func() {
+			if purposeBackup != nil {
+				if rollbackErr := purposeBackup.Rollback(); rollbackErr != nil {
+					log.Error("purpose rebuild rollback failed", "error", rollbackErr)
+				}
+			}
+		}()
 	}
 
 	// Open DB
@@ -232,6 +281,11 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 	merged := ontology.MergedRelations(cfg.Ontology.Relations)
 	mergedTypes := ontology.MergedEntityTypes(cfg.Ontology.EntityTypes)
 	pipelineOntStore := ontology.NewStore(db, ontology.ValidRelationNames(merged), ontology.ValidEntityTypeNames(mergedTypes))
+	if purposeChanged {
+		if err := resetPurposeDerivedState(projectDir, cfg, mf, db, memStore, vecStore, chunkStore, pipelineOntStore); err != nil {
+			return nil, fmt.Errorf("compile: reset derived state after purpose change: %w", err)
+		}
+	}
 
 	// Backfill chunk index if needed (after migration, before first compile)
 	if chunkStore.NeedsBackfill(memStore) {
@@ -268,9 +322,10 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 	// Initialize legacy checkpoint state (retained for fallback)
 	if state == nil {
 		state = &CompileState{
-			CompileID: time.Now().Format("20060102-150405"),
-			StartedAt: time.Now().UTC().Format(time.RFC3339),
-			Pass:      1,
+			CompileID:   time.Now().Format("20060102-150405"),
+			PurposeHash: purpose.Hash,
+			StartedAt:   time.Now().UTC().Format(time.RFC3339),
+			Pass:        1,
 		}
 	}
 
@@ -289,6 +344,11 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 			SourceType:  "compiler",
 			CompileID:   compileID,
 		})
+	}
+	if purposeChanged {
+		if err := itemStore.ResetLLMPasses(sourceInfoPaths(allSources)); err != nil {
+			return nil, fmt.Errorf("compile: reset LLM passes after purpose change: %w", err)
+		}
 	}
 
 	// Load external parsers if enabled and trusted
@@ -375,22 +435,24 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 			fmt.Fprintln(os.Stderr, "Prompt caching unavailable with Gemini subscription auth.")
 		}
 		pipelineResult := runFullPipeline(toProcess, FullPipelineOpts{
-			ProjectDir:   projectDir,
-			Config:       cfg,
-			Client:       client,
-			Manifest:     mf,
-			DB:           db,
-			MemStore:     memStore,
-			VecStore:     vecStore,
-			ChunkStore:   chunkStore,
-			OntStore:     pipelineOntStore,
-			Embedder:     embedder,
-			Backpressure: bp,
-			ItemStore:    itemStore,
-			CacheEnabled: cacheEnabled,
-			Progress:     progress,
-			State:        state,
-			StatePath:    statePath,
+			ProjectDir:     projectDir,
+			Config:         cfg,
+			Client:         client,
+			Manifest:       mf,
+			DB:             db,
+			MemStore:       memStore,
+			VecStore:       vecStore,
+			ChunkStore:     chunkStore,
+			OntStore:       pipelineOntStore,
+			Embedder:       embedder,
+			Backpressure:   bp,
+			ItemStore:      itemStore,
+			CacheEnabled:   cacheEnabled,
+			Progress:       progress,
+			Purpose:        purpose.Text,
+			ForceSummaries: purposeChanged,
+			State:          state,
+			StatePath:      statePath,
 		})
 		result.Summarized = pipelineResult.Summarized
 		result.ConceptsExtracted = pipelineResult.ConceptsExtracted
@@ -453,10 +515,39 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 	// conservatively, so a wiki of a non-ML corpus can end up with the
 	// majority of links being phantom. Issue #90.
 	MaybeStripBrokenWikilinks(projectDir, cfg.Output, cfg.Compiler.StripBrokenLinksEnabled())
+	if purposeBackup != nil && result.Errors > 0 {
+		if err := db.Close(); err != nil {
+			log.Warn("close db before purpose rollback failed", "error", err)
+		}
+		if err := purposeBackup.Rollback(); err != nil {
+			return nil, fmt.Errorf("compile: rollback failed purpose rebuild: %w", err)
+		}
+		purposeBackup = nil
+		_ = os.Remove(statePath)
+		progress.Summary(result)
+		costReport := tracker.Report()
+		if costReport.TotalTokens > 0 {
+			fmt.Fprint(os.Stderr, llm.FormatReport(costReport))
+			result.CostReport = costReport
+		}
+		return result, nil
+	}
 
 	// Save manifest
+	if purposeChanged && result.Errors == 0 {
+		mf.PurposeHash = purpose.Hash
+	}
 	if err := mf.Save(mfPath); err != nil {
 		return nil, fmt.Errorf("compile: save manifest: %w", err)
+	}
+	if err := GenerateWikiIndex(projectDir, cfg, mf, purpose); err != nil {
+		return nil, fmt.Errorf("compile: generate wiki index: %w", err)
+	}
+	if purposeBackup != nil {
+		if err := purposeBackup.Commit(); err != nil {
+			return nil, fmt.Errorf("compile: finalize purpose rebuild backup: %w", err)
+		}
+		purposeBackup = nil
 	}
 
 	// Write CHANGELOG entry
@@ -524,6 +615,7 @@ func submitBatch(
 	diff *DiffResult,
 	statePath string,
 	tracker *llm.CostTracker,
+	purpose Purpose,
 ) (*CompileResult, error) {
 	result := &CompileResult{
 		Added:    len(diff.Added),
@@ -592,7 +684,7 @@ func submitBatch(
 			SourcePath: src.Path,
 			SourceType: content.Type,
 			MaxTokens:  maxTokens,
-		}, cfg.Language)
+		}, cfg.Language, purpose.Text)
 		if err != nil {
 			log.Warn("batch: skip source (prompt render failed)", "path", src.Path, "error", err)
 			continue
@@ -631,10 +723,11 @@ func submitBatch(
 	// Save checkpoint
 	utcNow := time.Now().UTC().Format(time.RFC3339)
 	state := &CompileState{
-		CompileID: time.Now().Format("20060102-150405"),
-		StartedAt: utcNow,
-		Pass:      1,
-		Pending:   pending,
+		CompileID:   time.Now().Format("20060102-150405"),
+		PurposeHash: purpose.Hash,
+		StartedAt:   utcNow,
+		Pass:        1,
+		Pending:     pending,
 		Batch: &BatchState{
 			BatchID:     batchID,
 			Provider:    client.ProviderName(),
@@ -665,6 +758,7 @@ func resumeBatch(
 	statePath string,
 	tracker *llm.CostTracker,
 	opts CompileOpts,
+	purpose Purpose,
 ) (*CompileResult, error) {
 	result := &CompileResult{}
 	bs := state.Batch
@@ -871,7 +965,7 @@ func resumeBatch(
 		client.SetPass("extract")
 		extCacheID, _ := client.SetupCache("You are an expert knowledge organizer. Extract structured concepts from source summaries.", model)
 		progress.StartPhase("Pass 2: Extract concepts", len(successfulSummaries))
-		concepts, err := ExtractConcepts(successfulSummaries, mf.Concepts, client, model, cfg.Compiler.ExtractBatchSize, cfg.Compiler.ExtractMaxTokens, cfg.Compiler.MaxParallel)
+		concepts, err := ExtractConcepts(successfulSummaries, mf.Concepts, client, model, cfg.Compiler.ExtractBatchSize, cfg.Compiler.ExtractMaxTokens, cfg.Compiler.MaxParallel, purpose.Text)
 		if err != nil {
 			progress.ItemError("concept extraction", err)
 			result.Errors++
@@ -923,6 +1017,7 @@ func resumeBatch(
 					RelationPatterns:   relPatterns,
 					ChunkSize:          cfg.Search.ChunkSizeOrDefault(),
 					Language:           cfg.Language,
+					Purpose:            purpose.Text,
 					AntiPatternPhrases: cfg.Compiler.AntiPatternPhrasesOrDefault(),
 					AllConcepts:        manifestConceptRefs(mf.Concepts),
 				}, concepts)
@@ -946,8 +1041,14 @@ func resumeBatch(
 	ExtractImages(projectDir, cfg.Output, nil)
 
 	// Save manifest
+	if result.Errors == 0 {
+		mf.PurposeHash = purpose.Hash
+	}
 	if err := mf.Save(mfPath); err != nil {
 		return nil, fmt.Errorf("compile: save manifest: %w", err)
+	}
+	if err := GenerateWikiIndex(projectDir, cfg, mf, purpose); err != nil {
+		return nil, fmt.Errorf("compile: generate wiki index: %w", err)
 	}
 
 	if err := writeChangelog(projectDir, cfg.Output, result, cfg.Compiler.UserTimeLocation()); err != nil {

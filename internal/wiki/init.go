@@ -11,6 +11,12 @@ import (
 	"github.com/xoai/sage-wiki/internal/storage"
 )
 
+const purposeTemplate = `<!--
+Describe what decisions, outcomes, and users this wiki should help with.
+Delete this file or leave only comments to disable purpose-aware compilation.
+-->
+`
+
 // InitGreenfield creates a new sage-wiki project from scratch.
 func InitGreenfield(dir string, project string, model string) error {
 	// Create directories. Note: "connections" is intentionally NOT created —
@@ -43,6 +49,9 @@ func InitGreenfield(dir string, project string, model string) error {
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "config.yaml already exists, preserving it\n")
+	}
+	if err := writePurposeTemplate(dir); err != nil {
+		return err
 	}
 
 	// Create SQLite DB
@@ -119,6 +128,9 @@ func InitVaultOverlay(dir string, project string, sourceFolders []string, ignore
 	} else {
 		fmt.Fprintf(os.Stderr, "config.yaml already exists, preserving it\n")
 	}
+	if err := writePurposeTemplate(dir); err != nil {
+		return err
+	}
 
 	// Create SQLite DB
 	dbPath := filepath.Join(dir, ".sage", "wiki.db")
@@ -135,6 +147,19 @@ func InitVaultOverlay(dir string, project string, sourceFolders []string, ignore
 	}
 
 	log.Info("project initialized", "mode", "vault-overlay", "dir", dir, "sources", sourceFolders)
+	return nil
+}
+
+func writePurposeTemplate(dir string) error {
+	path := filepath.Join(dir, "purpose.md")
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("init: stat purpose.md: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(purposeTemplate), 0644); err != nil {
+		return fmt.Errorf("init: write purpose.md: %w", err)
+	}
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/xoai/sage-wiki/internal/config"
 )
@@ -209,12 +210,12 @@ func TestTierManager_CheckDemotions(t *testing.T) {
 	// Stale source (queried 100 days ago)
 	items.Upsert(CompileItem{
 		SourcePath: "raw/stale.md", Tier: 3, SourceType: "compiler",
-		LastQueriedAt: "2026-01-01T00:00:00Z",
+		LastQueriedAt: time.Now().AddDate(0, 0, -100).UTC().Format(time.RFC3339),
 	})
 	// Recent source
 	items.Upsert(CompileItem{
 		SourcePath: "raw/fresh.md", Tier: 3, SourceType: "compiler",
-		LastQueriedAt: "2026-04-13T00:00:00Z",
+		LastQueriedAt: time.Now().AddDate(0, 0, -10).UTC().Format(time.RFC3339),
 	})
 
 	demoted, err := tm.CheckDemotions()

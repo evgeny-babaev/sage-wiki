@@ -23,15 +23,25 @@ type DiffResult struct {
 
 // SourceInfo describes a source file.
 type SourceInfo struct {
-	Path     string
-	Hash     string
-	Type     string
-	Size     int64
+	Path string
+	Hash string
+	Type string
+	Size int64
+}
+
+// PurposeAwareDiff applies the same purpose invalidation contract as Compile.
+func PurposeAwareDiff(projectDir string, cfg *config.Config, mf *manifest.Manifest) (*DiffResult, error) {
+	purpose, err := LoadPurpose(projectDir)
+	if err != nil {
+		return nil, err
+	}
+	return Diff(projectDir, cfg, mf, mf.PurposeHash != purpose.Hash)
 }
 
 // Diff scans source directories and compares against the manifest.
-func Diff(projectDir string, cfg *config.Config, mf *manifest.Manifest) (*DiffResult, error) {
+func Diff(projectDir string, cfg *config.Config, mf *manifest.Manifest, forceModified ...bool) (*DiffResult, error) {
 	result := &DiffResult{}
+	force := len(forceModified) > 0 && forceModified[0]
 
 	// Collect current source files
 	current := make(map[string]SourceInfo)
@@ -50,6 +60,9 @@ func Diff(projectDir string, cfg *config.Config, mf *manifest.Manifest) (*DiffRe
 		}
 
 		if err := WalkSourceDir(srcDir, func(absPath, relPath string, d os.DirEntry) error {
+			if filepath.Clean(absPath) == filepath.Clean(filepath.Join(projectDir, PurposeFilename)) {
+				return nil
+			}
 			// Skip hidden files (.DS_Store etc.)
 			if strings.HasPrefix(d.Name(), ".") {
 				return nil
@@ -121,7 +134,7 @@ func Diff(projectDir string, cfg *config.Config, mf *manifest.Manifest) (*DiffRe
 		existing, exists := mf.Sources[path]
 		if !exists {
 			result.Added = append(result.Added, info)
-		} else if existing.Hash != info.Hash || existing.Type != info.Type {
+		} else if force || existing.Hash != info.Hash || existing.Type != info.Type {
 			result.Modified = append(result.Modified, info)
 		}
 	}

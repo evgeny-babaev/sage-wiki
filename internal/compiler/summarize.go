@@ -39,6 +39,8 @@ type SummarizeOpts struct {
 	MaxParallel  int
 	UserTZ       *time.Location
 	Language     string
+	Purpose      string
+	Force        bool                    // bypass source-hash summary reuse
 	Backpressure *BackpressureController // optional; if nil, uses fixed semaphore
 	ExtractOpts  []extract.ExtractOpts   // optional; passed to extract.Extract
 	// Summary filename scheme + configured source roots for "relative" naming
@@ -99,7 +101,7 @@ func Summarize(opts SummarizeOpts) []SummaryResult {
 			defer wg.Done()
 			defer release()
 
-			result := summarizeOne(opts.ProjectDir, opts.OutputDir, info, opts.Client, opts.Model, opts.MaxTokens, opts.UserTZ, opts.Language, opts.SummaryNaming, opts.SourceRoots, opts.ExtractOpts...)
+			result := summarizeOneWithPurpose(opts.ProjectDir, opts.OutputDir, info, opts.Client, opts.Model, opts.MaxTokens, opts.UserTZ, opts.Language, opts.Purpose, opts.Force, opts.SummaryNaming, opts.SourceRoots, opts.ExtractOpts...)
 			results[idx] = result
 
 			n := int(done.Add(1))
@@ -143,6 +145,24 @@ func summarizeOne(
 	sourceRoots []string,
 	extractOpts ...extract.ExtractOpts,
 ) SummaryResult {
+	return summarizeOneWithPurpose(projectDir, outputDir, info, client, model, maxTokens, userTZ, language, "", false, summaryNaming, sourceRoots, extractOpts...)
+}
+
+func summarizeOneWithPurpose(
+	projectDir string,
+	outputDir string,
+	info SourceInfo,
+	client *llm.Client,
+	model string,
+	maxTokens int,
+	userTZ *time.Location,
+	language string,
+	purpose string,
+	force bool,
+	summaryNaming string,
+	sourceRoots []string,
+	extractOpts ...extract.ExtractOpts,
+) SummaryResult {
 	result := SummaryResult{SourcePath: info.Path}
 
 	// Resolve the summary filename under the configured naming scheme (issue
@@ -161,7 +181,7 @@ func summarizeOne(
 	// frontmatter guards against serving stale summaries for modified sources.
 	summaryPath := filepath.Join(outputDir, "summaries", summaryName)
 	absSummary := filepath.Join(projectDir, summaryPath)
-	if existing, err := os.ReadFile(absSummary); err == nil {
+	if existing, err := os.ReadFile(absSummary); !force && err == nil {
 		body := string(existing)
 		// Parse source_hash from YAML frontmatter and verify it matches the current
 		// source file. This prevents stale summaries being served for modified sources.
@@ -201,7 +221,7 @@ func summarizeOne(
 
 	// Handle image sources — use vision if available
 	if extract.IsImageSource(content) {
-		text, err := summarizeImage(projectDir, info, client, model, maxTokens)
+		text, err := summarizeImage(projectDir, info, client, model, maxTokens, purpose)
 		if err != nil {
 			result.Error = err
 			return result
@@ -226,7 +246,7 @@ func summarizeOne(
 			SourcePath: info.Path,
 			SourceType: content.Type,
 			MaxTokens:  maxTokens,
-		}, language)
+		}, language, purpose)
 		if err != nil {
 			result.Error = fmt.Errorf("render prompt: %w", err)
 			return result
@@ -248,14 +268,14 @@ func summarizeOne(
 		summaryText = resp.Content
 	} else {
 		// Multi-chunk: summarize each chunk, then synthesize hierarchically
-		chunkSummaries, err := summarizeChunks(content.Chunks, info, templateName, content.Type, client, model, maxTokens, language)
+		chunkSummaries, err := summarizeChunks(content.Chunks, info, templateName, content.Type, client, model, maxTokens, language, purpose)
 		if err != nil {
 			result.Error = err
 			return result
 		}
 
 		// Hierarchical synthesis: reduce in groups until we have a single summary
-		summaryText, err = synthesizeHierarchical(chunkSummaries, info.Path, client, model, maxTokens, language)
+		summaryText, err = synthesizeHierarchicalWithPurpose(chunkSummaries, info.Path, client, model, maxTokens, language, purpose)
 		if err != nil {
 			result.Error = err
 			return result
@@ -322,7 +342,7 @@ chunk_count: %d
 	return result
 }
 
-func summarizeImage(projectDir string, info SourceInfo, client *llm.Client, model string, maxTokens int) (string, error) {
+func summarizeImage(projectDir string, info SourceInfo, client *llm.Client, model string, maxTokens int, purpose string) (string, error) {
 	if !client.SupportsVision() {
 		return "", fmt.Errorf("skipping image %s — LLM provider does not support vision", info.Path)
 	}
@@ -337,6 +357,7 @@ func summarizeImage(projectDir string, info SourceInfo, client *llm.Client, mode
 	b64 := base64.StdEncoding.EncodeToString(imgData)
 
 	prompt := fmt.Sprintf("Describe this image from a knowledge base.\nSource: %s\n\nProvide:\n1. A brief caption\n2. What the image depicts (diagram, chart, photo, screenshot, etc.)\n3. Key information conveyed\n4. Any text visible in the image\n5. Concepts this relates to", info.Path)
+	prompt += prompts.PurposeInstruction(purpose)
 
 	resp, err := client.ChatCompletionWithImage([]llm.Message{
 		{Role: "system", Content: "You are a research assistant describing images for a personal knowledge wiki."},
@@ -380,6 +401,7 @@ func summarizeChunks(
 	model string,
 	maxTokens int,
 	language string,
+	purpose string,
 ) ([]string, error) {
 	// Group chunks if per-chunk budget is too low
 	groups := groupChunks(chunks, maxTokens)
@@ -413,7 +435,7 @@ func summarizeChunks(
 			SourcePath: info.Path,
 			SourceType: sourceType,
 			MaxTokens:  perGroupBudget,
-		}, language)
+		}, language, purpose)
 		if err != nil {
 			return nil, fmt.Errorf("group %d render prompt: %w", gi, err)
 		}
@@ -478,6 +500,10 @@ func groupChunks(chunks []extract.Chunk, maxTokens int) [][]extract.Chunk {
 // synthesizeHierarchical reduces summaries in tiers of synthesisGroupSize
 // until a single final summary remains.
 func synthesizeHierarchical(summaries []string, sourcePath string, client *llm.Client, model string, maxTokens int, language string) (string, error) {
+	return synthesizeHierarchicalWithPurpose(summaries, sourcePath, client, model, maxTokens, language, "")
+}
+
+func synthesizeHierarchicalWithPurpose(summaries []string, sourcePath string, client *llm.Client, model string, maxTokens int, language string, purpose string) (string, error) {
 	if len(summaries) == 0 {
 		return "", fmt.Errorf("synthesize: no summaries to combine for %q", sourcePath)
 	}
@@ -504,6 +530,7 @@ func synthesizeHierarchical(summaries []string, sourcePath string, client *llm.C
 				"Combine these %d section summaries into a single coherent summary of the source document %q.\n\n%s",
 				len(group), sourcePath, strings.Join(group, "\n\n---\n\n"),
 			)
+			synthesisPrompt += prompts.PurposeInstruction(purpose)
 			synthesisPrompt += prompts.LanguageInstruction(language)
 
 			resp, err := client.ChatCompletion([]llm.Message{

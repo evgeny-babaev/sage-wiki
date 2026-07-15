@@ -69,6 +69,8 @@ func Watch(projectDir string, debounceSeconds int, opts CompileOpts, coordinator
 		for _, sp := range sourcePaths {
 			addRecursive(watcher, sp)
 		}
+		// purpose.md lives at the project root, outside normal source roots.
+		_ = watcher.Add(projectDir)
 	}
 
 	// Start polling as primary or fallback
@@ -106,14 +108,15 @@ func Watch(projectDir string, debounceSeconds int, opts CompileOpts, coordinator
 
 	defer watcher.Close()
 	log.Info("watching for changes (fsnotify)", "sources", sourcePaths, "debounce", debounceSeconds)
-	return watchFsnotify(projectDir, watcher, debounceSeconds, triggerOpts, cc)
+	return watchFsnotify(projectDir, watcher, sourcePaths, debounceSeconds, triggerOpts, cc)
 }
 
 // watchFsnotify uses inotify-based watching (works on native Linux, macOS).
-func watchFsnotify(projectDir string, watcher *fsnotify.Watcher, debounceSeconds int, opts CompileOpts, cc *CompileCoordinator) error {
+func watchFsnotify(projectDir string, watcher *fsnotify.Watcher, sourcePaths []string, debounceSeconds int, opts CompileOpts, cc *CompileCoordinator) error {
 	debounce := time.Duration(debounceSeconds) * time.Second
 	var timer *time.Timer
 	var lastTrigger string
+	purposePath := filepath.Clean(filepath.Join(projectDir, PurposeFilename))
 
 	for {
 		select {
@@ -123,6 +126,9 @@ func watchFsnotify(projectDir string, watcher *fsnotify.Watcher, debounceSeconds
 			}
 
 			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0 {
+				continue
+			}
+			if filepath.Clean(event.Name) != purposePath && !pathWithinRoots(event.Name, sourcePaths) {
 				continue
 			}
 
@@ -233,8 +239,25 @@ func scanSnapshot(projectDir string, sources []config.Source, ignore []string) m
 			return nil
 		})
 	}
+	purposePath := filepath.Join(projectDir, PurposeFilename)
+	if hash := quickHash(purposePath); hash != "" {
+		snapshot[purposePath] = hash
+	} else {
+		snapshot[purposePath] = "missing"
+	}
 
 	return snapshot
+}
+
+func pathWithinRoots(path string, roots []string) bool {
+	path = filepath.Clean(path)
+	for _, root := range roots {
+		rel, err := filepath.Rel(filepath.Clean(root), path)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // quickHash returns a fast hash of file metadata (size + modtime).

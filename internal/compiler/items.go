@@ -10,12 +10,12 @@ import (
 
 // CompileItem represents a source file's compilation state.
 type CompileItem struct {
-	SourcePath  string
-	Hash        string
-	FileType    string
-	SizeBytes   int64
-	Tier        int
-	TierDefault int
+	SourcePath   string
+	Hash         string
+	FileType     string
+	SizeBytes    int64
+	Tier         int
+	TierDefault  int
 	TierOverride *int // nil = no override
 
 	// Per-pass completion
@@ -348,6 +348,32 @@ func (s *CompileItemStore) DeleteByPaths(paths []string) error {
 		for _, chunk := range chunkStrings(paths, 500) {
 			placeholders, args := buildInClause(chunk)
 			_, err := tx.Exec("DELETE FROM compile_items WHERE source_path IN ("+placeholders+")", args...)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// ResetLLMPasses invalidates purpose-dependent passes while preserving raw
+// indexing, embeddings, tier overrides, and usage signals.
+func (s *CompileItemStore) ResetLLMPasses(paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	return s.db.WriteTx(func(tx *sql.Tx) error {
+		for _, chunk := range chunkStrings(paths, 500) {
+			placeholders, args := buildInClause(chunk)
+			_, err := tx.Exec(`UPDATE compile_items SET
+				pass_summarized = 0,
+				pass_extracted = 0,
+				pass_written = 0,
+				summary_path = NULL,
+				quality_score = NULL,
+				error = '',
+				updated_at = datetime('now')
+				WHERE source_path IN (`+placeholders+`)`, args...)
 			if err != nil {
 				return err
 			}

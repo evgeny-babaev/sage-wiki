@@ -56,6 +56,7 @@ type ArticleWriteOpts struct {
 	ChunkSize          int // tokens per chunk (default 800)
 	SplitThreshold     int // chars — enable section-aware writing above this (default 15000)
 	Language           string
+	Purpose            string
 	Backpressure       *BackpressureController // optional; if nil, uses fixed semaphore
 	AntiPatternPhrases []string                // sentences containing these are stripped (issue #95); nil/empty → no strip
 	// AllConcepts is the FULL manifest concept set (Name + Sources), used to
@@ -163,7 +164,7 @@ func writeOneArticle(opts ArticleWriteOpts, concept ExtractedConcept, aliasMap m
 		Confidence:      "medium",
 		MaxTokens:       opts.MaxTokens,
 		SourceContext:   sourceContext,
-	}, opts.Language)
+	}, opts.Language, opts.Purpose)
 	if err != nil {
 		result.Error = fmt.Errorf("render write_article prompt: %w", err)
 		return result

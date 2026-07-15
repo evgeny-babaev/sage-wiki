@@ -433,6 +433,8 @@ func (m Model) dirSnapshot() string {
 			return nil
 		})
 	}
+	if info, err := os.Stat(filepath.Join(m.projectDir, compiler.PurposeFilename)); err == nil {
+		total += info.Size() + info.ModTime().UnixNano()
+	}
 	return fmt.Sprintf("%d", total)
 }
-

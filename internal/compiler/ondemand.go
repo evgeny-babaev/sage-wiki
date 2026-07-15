@@ -33,12 +33,12 @@ type OnDemandOpts struct {
 
 // OnDemandResult summarizes what compile-on-demand produced.
 type OnDemandResult struct {
-	CompiledSources   int            `json:"compiled_sources"`
-	ArticlesWritten   int            `json:"articles_written"`
-	ConceptsExtracted int            `json:"concepts_extracted"`
-	DurationSeconds   float64        `json:"duration_seconds"`
-	Articles          []ArticleInfo  `json:"articles,omitempty"`
-	Message           string         `json:"message,omitempty"` // status message (e.g., "compile in progress")
+	CompiledSources   int           `json:"compiled_sources"`
+	ArticlesWritten   int           `json:"articles_written"`
+	ConceptsExtracted int           `json:"concepts_extracted"`
+	DurationSeconds   float64       `json:"duration_seconds"`
+	Articles          []ArticleInfo `json:"articles,omitempty"`
+	Message           string        `json:"message,omitempty"` // status message (e.g., "compile in progress")
 }
 
 // ArticleInfo describes a newly written article.
@@ -54,6 +54,17 @@ func CompileTopic(ctx context.Context, opts OnDemandOpts) (*OnDemandResult, erro
 
 	if opts.MaxSources <= 0 {
 		opts.MaxSources = 20
+	}
+	currentPurpose, err := LoadPurpose(opts.ProjectDir)
+	if err != nil {
+		return nil, fmt.Errorf("on-demand: %w", err)
+	}
+	currentManifest, err := manifest.Load(filepath.Join(opts.ProjectDir, ".manifest.json"))
+	if err != nil {
+		return nil, fmt.Errorf("on-demand: load manifest: %w", err)
+	}
+	if currentManifest.PurposeHash != currentPurpose.Hash {
+		return nil, fmt.Errorf("on-demand: purpose.md changed; run sage-wiki compile before compile-on-demand")
 	}
 
 	// Search for relevant sources
@@ -100,10 +111,10 @@ func CompileTopic(ctx context.Context, opts OnDemandOpts) (*OnDemandResult, erro
 		}
 
 		uncompiled = append(uncompiled, SourceInfo{
-			Path:     item.SourcePath,
-			Hash:     item.Hash,
-			Type:     item.FileType,
-			Size:     item.SizeBytes,
+			Path: item.SourcePath,
+			Hash: item.Hash,
+			Type: item.FileType,
+			Size: item.SizeBytes,
 		})
 
 		if len(uncompiled) >= opts.MaxSources {
@@ -143,6 +154,13 @@ func CompileTopic(ctx context.Context, opts OnDemandOpts) (*OnDemandResult, erro
 		if err != nil {
 			return fmt.Errorf("on-demand: load manifest: %w", err)
 		}
+		purpose, err := LoadPurpose(opts.ProjectDir)
+		if err != nil {
+			return fmt.Errorf("on-demand: %w", err)
+		}
+		if mf.PurposeHash != purpose.Hash {
+			return fmt.Errorf("on-demand: purpose.md changed; run sage-wiki compile before compile-on-demand")
+		}
 
 		bp := NewBackpressureController(cfg.Compiler.MaxParallel)
 		cacheEnabled := cfg.Compiler.PromptCacheEnabled()
@@ -163,6 +181,7 @@ func CompileTopic(ctx context.Context, opts OnDemandOpts) (*OnDemandResult, erro
 			ItemStore:    items,
 			CacheEnabled: cacheEnabled,
 			Progress:     NewProgress(),
+			Purpose:      purpose.Text,
 		})
 
 		result.ArticlesWritten = pResult.ArticlesWritten
@@ -204,6 +223,9 @@ func CompileTopic(ctx context.Context, opts OnDemandOpts) (*OnDemandResult, erro
 		// Save manifest
 		if err := mf.Save(mfPath); err != nil {
 			return fmt.Errorf("on-demand: save manifest: %w", err)
+		}
+		if err := GenerateWikiIndex(opts.ProjectDir, cfg, mf, purpose); err != nil {
+			return fmt.Errorf("on-demand: generate wiki index: %w", err)
 		}
 
 		return nil

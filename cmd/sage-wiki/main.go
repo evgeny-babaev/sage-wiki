@@ -686,7 +686,7 @@ func maybePromptEstimate(dir string) error {
 		return nil
 	}
 
-	diff, err := compiler.Diff(dir, cfg, mf)
+	diff, err := compiler.PurposeAwareDiff(dir, cfg, mf)
 	if err != nil {
 		return nil
 	}
@@ -734,7 +734,7 @@ func runEstimate(dir string) error {
 		return err
 	}
 
-	diff, err := compiler.Diff(dir, cfg, mf)
+	diff, err := compiler.PurposeAwareDiff(dir, cfg, mf)
 	if err != nil {
 		return err
 	}

@@ -50,7 +50,12 @@ func ExtractConcepts(
 	batchSize int,
 	maxTokens int,
 	concurrency int,
+	purpose ...string,
 ) ([]ExtractedConcept, error) {
+	var wikiPurpose string
+	if len(purpose) > 0 {
+		wikiPurpose = purpose[0]
+	}
 	if batchSize <= 0 {
 		batchSize = 20
 	}
@@ -137,7 +142,7 @@ func ExtractConcepts(
 			prompt, err := prompts.Render("extract_concepts", prompts.ExtractData{
 				ExistingConcepts: dedupSnapshot,
 				Summaries:        strings.Join(summaryTexts, "\n\n---\n\n"),
-			}, "")
+			}, "", wikiPurpose)
 			if err != nil {
 				recordFailure(fmt.Errorf("batch %d render: %w", b.index+1, err))
 				log.Error("render extract_concepts prompt failed", "batch", b.index+1, "error", err)
@@ -321,4 +326,3 @@ func parseConceptsJSON(text string) ([]ExtractedConcept, error) {
 
 	return concepts, nil
 }
-

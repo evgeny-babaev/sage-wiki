@@ -548,7 +548,7 @@ func (s *Server) handleCompileDiff(ctx context.Context, req mcplib.CallToolReque
 	// manifest entries with status "pending", so new files on disk that
 	// hadn't been ingested yet were completely invisible to MCP clients
 	// (issue #51).
-	diff, err := compiler.Diff(s.projectDir, s.cfg, mf)
+	diff, err := compiler.PurposeAwareDiff(s.projectDir, s.cfg, mf)
 	if err != nil {
 		return errorResult(err.Error()), nil
 	}

@@ -27,9 +27,11 @@ my-project/
 ├── src/                         # application code
 └── .sage-wiki/                  # sage-wiki project root
     ├── config.yaml
+    ├── purpose.md                 # optional compilation objective
     ├── .sage/wiki.db
     ├── .manifest.json
     └── _wiki/                   # compiled output
+        ├── index.md             # generated file graph entry point
         ├── concepts/
         ├── summaries/
         └── CHANGELOG.md

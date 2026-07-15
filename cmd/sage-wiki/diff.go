@@ -30,7 +30,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		return cli.CLIError(outputFormat, err)
 	}
 
-	diff, err := compiler.Diff(dir, cfg, mf)
+	diff, err := compiler.PurposeAwareDiff(dir, cfg, mf)
 	if err != nil {
 		return cli.CLIError(outputFormat, err)
 	}

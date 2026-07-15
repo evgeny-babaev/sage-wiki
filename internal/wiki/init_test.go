@@ -37,6 +37,17 @@ func TestInitGreenfield(t *testing.T) {
 		t.Error("config.yaml should exist")
 	}
 
+	// purpose.md is optional at runtime, but new projects get a comment-only
+	// template that keeps purpose-aware compilation disabled until edited.
+	purposePath := filepath.Join(dir, "purpose.md")
+	purpose, err := os.ReadFile(purposePath)
+	if err != nil {
+		t.Fatalf("read purpose.md: %v", err)
+	}
+	if !strings.Contains(string(purpose), "wiki should help") {
+		t.Errorf("purpose.md missing guidance: %q", string(purpose))
+	}
+
 	// Verify .gitignore
 	gitignore := filepath.Join(dir, ".gitignore")
 	data, err := os.ReadFile(gitignore)

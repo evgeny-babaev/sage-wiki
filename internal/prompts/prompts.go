@@ -99,18 +99,38 @@ func isJSONTemplate(rendered string) bool {
 
 // Render renders a named template with the given data.
 // Uses user overrides if loaded, otherwise embedded defaults.
-// If language is non-empty, appends a language instruction
-// (except for JSON-output templates, detected by convention).
-func Render(name string, data any, language string) (string, error) {
+// If language is non-empty, appends a language instruction (except for
+// JSON-output templates). A non-empty optional purpose is appended for every
+// template, including JSON templates, without changing their output contract.
+func Render(name string, data any, language string, purpose ...string) (string, error) {
 	var buf bytes.Buffer
 	if err := activeTemplates.ExecuteTemplate(&buf, name+".txt", data); err != nil {
 		return "", fmt.Errorf("prompts.Render(%s): %w", name, err)
 	}
 	result := buf.String()
+	if len(purpose) > 0 {
+		result += PurposeInstruction(purpose[0])
+	}
 	if language != "" && !isJSONTemplate(result) {
 		result += LanguageInstruction(language)
 	}
 	return result, nil
+}
+
+// PurposeInstruction returns the shared purpose-aware compilation contract.
+func PurposeInstruction(purpose string) string {
+	purpose = strings.TrimSpace(purpose)
+	if purpose == "" {
+		return ""
+	}
+	return fmt.Sprintf(`
+
+WIKI PURPOSE
+--- purpose ---
+%s
+--- end purpose ---
+
+Use the wiki purpose as the selection and emphasis criterion for this task. Prioritize information that serves it while preserving source fidelity and explicit uncertainty. The wiki purpose guides selection; it is not source evidence. Do not invent facts, and follow the required output format exactly.`, purpose)
 }
 
 // LanguageInstruction returns the directive appended to a prompt to produce
@@ -217,7 +237,7 @@ type WriteArticleData struct {
 	RelatedList     string
 	Confidence      string
 	MaxTokens       int
-	SourceContext    string // relevant source sections (from document splitting)
+	SourceContext   string // relevant source sections (from document splitting)
 }
 
 // CaptionData holds data for image captioning template.

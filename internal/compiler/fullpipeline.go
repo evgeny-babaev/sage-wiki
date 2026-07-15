@@ -60,21 +60,23 @@ func warnSummaryNameCollisions(paths, roots []string, mode string) {
 // FullPipelineOpts bundles all parameters needed for the full compilation
 // pipeline (Pass 1 → Pass 2 → Pass 3).
 type FullPipelineOpts struct {
-	Ctx          context.Context // cancellation context; nil = background
-	ProjectDir   string
-	Config       *config.Config
-	Client       *llm.Client
-	Manifest     *manifest.Manifest
-	DB           *storage.DB
-	MemStore     *memory.Store
-	VecStore     *vectors.Store
-	ChunkStore   *memory.ChunkStore
-	OntStore     *ontology.Store
-	Embedder     embed.Embedder
-	Backpressure *BackpressureController
-	ItemStore    *CompileItemStore // optional — for per-article quality scoring
-	CacheEnabled bool
-	Progress     *Progress
+	Ctx            context.Context // cancellation context; nil = background
+	ProjectDir     string
+	Config         *config.Config
+	Client         *llm.Client
+	Manifest       *manifest.Manifest
+	DB             *storage.DB
+	MemStore       *memory.Store
+	VecStore       *vectors.Store
+	ChunkStore     *memory.ChunkStore
+	OntStore       *ontology.Store
+	Embedder       embed.Embedder
+	Backpressure   *BackpressureController
+	ItemStore      *CompileItemStore // optional — for per-article quality scoring
+	CacheEnabled   bool
+	Progress       *Progress
+	Purpose        string
+	ForceSummaries bool
 
 	// Checkpoint (legacy — retained alongside compile_items for M3 fallback)
 	State     *CompileState
@@ -148,6 +150,8 @@ func runFullPipeline(sources []SourceInfo, opts FullPipelineOpts) *FullPipelineR
 		MaxParallel:   cfg.Compiler.MaxParallel,
 		UserTZ:        cfg.Compiler.UserTimeLocation(),
 		Language:      cfg.Language,
+		Purpose:       opts.Purpose,
+		Force:         opts.ForceSummaries,
 		Backpressure:  opts.Backpressure,
 		ExtractOpts:   sumExOpts,
 		SummaryNaming: summaryNaming,
@@ -242,7 +246,7 @@ func runFullPipeline(sources []SourceInfo, opts FullPipelineOpts) *FullPipelineR
 		extCacheID, _ = client.SetupCache("You are an expert knowledge organizer. Extract structured concepts from source summaries.", extractModel)
 	}
 	progress.StartPhase("Pass 2: Extract concepts", len(successfulSummaries))
-	concepts, err := ExtractConcepts(successfulSummaries, mf.Concepts, client, extractModel, cfg.Compiler.ExtractBatchSize, cfg.Compiler.ExtractMaxTokens, cfg.Compiler.MaxParallel)
+	concepts, err := ExtractConcepts(successfulSummaries, mf.Concepts, client, extractModel, cfg.Compiler.ExtractBatchSize, cfg.Compiler.ExtractMaxTokens, cfg.Compiler.MaxParallel, opts.Purpose)
 	if err != nil {
 		progress.ItemError("concept extraction", err)
 		result.Errors++
@@ -358,6 +362,7 @@ func runFullPipeline(sources []SourceInfo, opts FullPipelineOpts) *FullPipelineR
 		ChunkSize:          cfg.Search.ChunkSizeOrDefault(),
 		SplitThreshold:     cfg.Compiler.SplitThreshold,
 		Language:           cfg.Language,
+		Purpose:            opts.Purpose,
 		Backpressure:       opts.Backpressure,
 		AntiPatternPhrases: cfg.Compiler.AntiPatternPhrasesOrDefault(),
 		AllConcepts:        manifestConceptRefs(mf.Concepts),

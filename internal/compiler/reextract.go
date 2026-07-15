@@ -36,6 +36,13 @@ func ReExtract(projectDir string) (*CompileResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("re-extract: load manifest: %w", err)
 	}
+	purpose, err := LoadPurpose(projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("re-extract: %w", err)
+	}
+	if mf.PurposeHash != purpose.Hash {
+		return nil, fmt.Errorf("re-extract: purpose.md changed; run sage-wiki compile to rebuild summaries first")
+	}
 
 	// Read existing summaries from disk
 	summaryDir := filepath.Join(projectDir, cfg.Output, "summaries")
@@ -94,7 +101,7 @@ func ReExtract(projectDir string) (*CompileResult, error) {
 	}
 
 	log.Info("Pass 2: extracting concepts", "from_summaries", len(summaries))
-	concepts, err := ExtractConcepts(summaries, mf.Concepts, client, extractModel, cfg.Compiler.ExtractBatchSize, cfg.Compiler.ExtractMaxTokens, cfg.Compiler.MaxParallel)
+	concepts, err := ExtractConcepts(summaries, mf.Concepts, client, extractModel, cfg.Compiler.ExtractBatchSize, cfg.Compiler.ExtractMaxTokens, cfg.Compiler.MaxParallel, purpose.Text)
 	if err != nil {
 		return nil, fmt.Errorf("re-extract: concept extraction: %w", err)
 	}
@@ -136,6 +143,7 @@ func ReExtract(projectDir string) (*CompileResult, error) {
 			RelationPatterns:   relPatterns,
 			ChunkSize:          cfg.Search.ChunkSizeOrDefault(),
 			Language:           cfg.Language,
+			Purpose:            purpose.Text,
 			AntiPatternPhrases: cfg.Compiler.AntiPatternPhrasesOrDefault(),
 			AllConcepts:        manifestConceptRefs(mf.Concepts),
 		}, concepts)
@@ -158,6 +166,9 @@ func ReExtract(projectDir string) (*CompileResult, error) {
 	// Save manifest
 	if err := mf.Save(filepath.Join(projectDir, ".manifest.json")); err != nil {
 		return nil, fmt.Errorf("re-extract: save manifest: %w", err)
+	}
+	if err := GenerateWikiIndex(projectDir, cfg, mf, purpose); err != nil {
+		return nil, fmt.Errorf("re-extract: generate wiki index: %w", err)
 	}
 
 	log.Info("re-extract complete", "concepts", result.ConceptsExtracted, "articles", result.ArticlesWritten, "errors", result.Errors)
