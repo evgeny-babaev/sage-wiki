@@ -39,7 +39,7 @@ func (s *Server) registerWriteTools() {
 	s.mcp.AddTool(
 		mcplib.NewTool("wiki_set_index_intro",
 			mcplib.WithDescription("Replace index_intro.md and immediately regenerate wiki/index.md without an LLM compile."),
-			mcplib.WithString("content", mcplib.Required(), mcplib.Description("Complete Markdown introduction placed before generated navigation sections (max 100KB, no H1)")),
+			mcplib.WithString("content", mcplib.Required(), mcplib.Description("Complete Markdown introduction placed before generated navigation sections (max 100KB); an optional first H1 overrides the configured index title")),
 		),
 		s.handleSetIndexIntro,
 	)
@@ -174,9 +174,6 @@ func (s *Server) handleSetIndexIntro(ctx context.Context, req mcplib.CallToolReq
 	}
 	if len([]byte(content)) > 100*1024 {
 		return errorResult("content exceeds 100KB limit"), nil
-	}
-	if strings.HasPrefix(strings.TrimSpace(content), "# ") {
-		return errorResult("index intro must not contain an H1; wiki/index.md generates the project title"), nil
 	}
 	if content != "" && !strings.HasSuffix(content, "\n") {
 		content += "\n"

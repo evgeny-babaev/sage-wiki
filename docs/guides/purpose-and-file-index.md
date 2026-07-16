@@ -58,4 +58,4 @@ Links are relative to the configured output directory, so nested outputs remain 
 
 `wiki/index.md` is generated output. Do not edit it manually.
 
-Use the MCP tools `wiki_get_index_intro` and `wiki_set_index_intro` to manage the introduction remotely. Setting it regenerates `wiki/index.md` immediately and does not run an LLM compile.
+Use the MCP tools `wiki_get_index_intro` and `wiki_set_index_intro` to manage the introduction remotely. An optional first H1 overrides the configured index title. Setting the introduction regenerates `wiki/index.md` immediately and does not run an LLM compile.

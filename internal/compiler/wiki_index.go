@@ -46,17 +46,21 @@ func GenerateWikiIndex(projectDir string, cfg *config.Config, mf *manifest.Manif
 		return err
 	}
 
-	title := cfg.Project
-	if title == "" {
-		title = "Wiki"
-	}
-
-	var content strings.Builder
-	fmt.Fprintf(&content, "# %s\n\n%s\n\n", title, wikiIndexGeneratedNotice)
 	intro, err := LoadIndexIntro(projectDir)
 	if err != nil {
 		return fmt.Errorf("generate wiki index: %w", err)
 	}
+	title := cfg.Project
+	if title == "" {
+		title = "Wiki"
+	}
+	if introTitle, introBody := splitIndexIntroTitle(intro); introTitle != "" {
+		title = introTitle
+		intro = introBody
+	}
+
+	var content strings.Builder
+	fmt.Fprintf(&content, "# %s\n\n%s\n\n", title, wikiIndexGeneratedNotice)
 	if intro != "" {
 		content.WriteString(intro)
 		content.WriteString("\n\n")
@@ -91,6 +95,16 @@ func LoadIndexIntro(projectDir string) (string, error) {
 		return "", fmt.Errorf("load index intro: %w", err)
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+func splitIndexIntroTitle(intro string) (string, string) {
+	lines := strings.Split(intro, "\n")
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "# ") {
+		return "", intro
+	}
+	title := strings.TrimSpace(strings.TrimPrefix(lines[0], "# "))
+	body := strings.TrimSpace(strings.Join(lines[1:], "\n"))
+	return title, body
 }
 
 func wikiIndexConceptLinks(projectDir, outputDir string, mf *manifest.Manifest) ([]wikiIndexLink, error) {

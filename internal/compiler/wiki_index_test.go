@@ -62,7 +62,7 @@ func TestGenerateWikiIndexPurposeAndSortedArtifacts(t *testing.T) {
 func TestGenerateWikiIndexIncludesProjectIntro(t *testing.T) {
 	projectDir := t.TempDir()
 	cfg := &config.Config{Project: "Project Wiki", Output: "wiki"}
-	intro := "## What this is\n\nProject memory.\n\n## How to read\n\nStart here.\n"
+	intro := "# Human Project Title\n\n## What this is\n\nProject memory.\n\n## How to read\n\nStart here.\n"
 	if err := os.WriteFile(filepath.Join(projectDir, IndexIntroFilename), []byte(intro), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -71,6 +71,9 @@ func TestGenerateWikiIndexIncludesProjectIntro(t *testing.T) {
 		t.Fatalf("GenerateWikiIndex: %v", err)
 	}
 	got := readWikiIndex(t, projectDir, cfg.Output)
+	if !strings.HasPrefix(got, "# Human Project Title\n\n") || strings.Count(got, "# Human Project Title") != 1 {
+		t.Fatalf("index intro title missing or duplicated:\n%s", got)
+	}
 	if !strings.Contains(got, "## What this is\n\nProject memory.\n\n## How to read\n\nStart here.\n\n## Concepts") {
 		t.Fatalf("index intro missing or misplaced:\n%s", got)
 	}
