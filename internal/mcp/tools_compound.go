@@ -38,11 +38,19 @@ func (s *Server) handleCompile(ctx context.Context, req mcplib.CallToolRequest) 
 	fresh, _ := args["fresh"].(bool)
 	prune, _ := args["prune"].(bool)
 
-	result, err := compiler.Compile(s.projectDir, compiler.CompileOpts{
-		DryRun: dryRun,
-		Fresh:  fresh,
-		Prune:  prune,
+	var result *compiler.CompileResult
+	acquired, err := s.coordinator.TryCompile(func() error {
+		var compileErr error
+		result, compileErr = compiler.Compile(s.projectDir, compiler.CompileOpts{
+			DryRun: dryRun,
+			Fresh:  fresh,
+			Prune:  prune,
+		})
+		return compileErr
 	})
+	if !acquired {
+		return errorResult("compile blocked: another compile or reset is currently running"), nil
+	}
 	if err != nil {
 		return errorResult(fmt.Sprintf("compile failed: %v", err)), nil
 	}

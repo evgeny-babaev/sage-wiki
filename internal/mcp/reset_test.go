@@ -88,7 +88,7 @@ func TestResetKnowledgeClearsDerivedStateAndPreservesProjectInstructions(t *test
 	result := srv.CallTool(context.Background(), "wiki_reset_knowledge", mcplib.CallToolRequest{
 		Params: mcplib.CallToolParams{
 			Name:      "wiki_reset_knowledge",
-			Arguments: map[string]any{"confirm": true},
+			Arguments: map[string]any{"confirm_project": "test"},
 		},
 	})
 	if result.IsError {

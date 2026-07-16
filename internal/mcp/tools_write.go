@@ -30,8 +30,8 @@ import (
 func (s *Server) registerWriteTools() {
 	s.mcp.AddTool(
 		mcplib.NewTool("wiki_reset_knowledge",
-			mcplib.WithDescription("Delete all sources and compiled knowledge while preserving config.yaml, purpose.md, and index_intro.md."),
-			mcplib.WithBoolean("confirm", mcplib.Required(), mcplib.Description("Must be true to confirm the destructive reset")),
+			mcplib.WithDescription("Destructively delete configured source and output directories plus all search, vector, ontology, compiler, learning, and trust data. Preserve config.yaml, purpose.md, and index_intro.md."),
+			mcplib.WithString("confirm_project", mcplib.Required(), mcplib.Description("Must exactly match the configured project name")),
 		),
 		s.handleResetKnowledge,
 	)

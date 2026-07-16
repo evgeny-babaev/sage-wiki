@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/xoai/sage-wiki/internal/compiler"
+	"github.com/xoai/sage-wiki/internal/config"
 	"github.com/xoai/sage-wiki/internal/manifest"
 )
 
@@ -19,15 +21,19 @@ type resetMove struct {
 }
 
 func (s *Server) handleResetKnowledge(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	confirm, _ := req.GetArguments()["confirm"].(bool)
-	if !confirm {
-		return errorResult("confirm=true is required to reset all wiki knowledge"), nil
+	cfg, err := config.Load(filepath.Join(s.projectDir, "config.yaml"))
+	if err != nil {
+		return errorResult(fmt.Sprintf("reset failed: load config: %v", err)), nil
+	}
+	confirmProject, _ := req.GetArguments()["confirm_project"].(string)
+	if confirmProject != cfg.Project {
+		return errorResult(fmt.Sprintf("confirm_project must exactly match %q", cfg.Project)), nil
 	}
 
 	var sources, concepts int
 	acquired, err := s.coordinator.TryCompile(func() error {
 		var resetErr error
-		sources, concepts, resetErr = s.resetKnowledge()
+		sources, concepts, resetErr = s.resetKnowledge(cfg)
 		return resetErr
 	})
 	if !acquired {
@@ -39,12 +45,12 @@ func (s *Server) handleResetKnowledge(ctx context.Context, req mcplib.CallToolRe
 
 	return textResult(fmt.Sprintf(
 		"Knowledge reset complete:\n- Removed sources: %d\n- Removed concepts: %d\n- Preserved: config.yaml, purpose.md, index_intro.md\n- Regenerated: %s/index.md",
-		sources, concepts, filepath.ToSlash(s.cfg.Output),
+		sources, concepts, filepath.ToSlash(cfg.Output),
 	)), nil
 }
 
-func (s *Server) resetKnowledge() (int, int, error) {
-	if s.cfg.IsVaultOverlay() {
+func (s *Server) resetKnowledge(cfg *config.Config) (int, int, error) {
+	if cfg.IsVaultOverlay() {
 		return 0, 0, fmt.Errorf("knowledge reset is disabled for vault-overlay projects")
 	}
 
@@ -60,8 +66,8 @@ func (s *Server) resetKnowledge() (int, int, error) {
 		return 0, 0, fmt.Errorf("create reset backup: %w", err)
 	}
 
-	targets := append([]string{}, s.cfg.ResolveSources(s.projectDir)...)
-	targets = append(targets, s.cfg.ResolveOutput(s.projectDir))
+	targets := append([]string{}, cfg.ResolveSources(s.projectDir)...)
+	targets = append(targets, cfg.ResolveOutput(s.projectDir))
 	targets, err = safeResetTargets(s.projectDir, targets)
 	if err != nil {
 		_ = os.RemoveAll(backupRoot)
@@ -93,7 +99,11 @@ func (s *Server) resetKnowledge() (int, int, error) {
 		moves = append(moves, resetMove{original: target, backup: backup})
 	}
 
-	for _, file := range []string{mfPath, filepath.Join(s.projectDir, ".sage", "compile-state.json")} {
+	for _, file := range []string{
+		mfPath,
+		filepath.Join(s.projectDir, ".sage", "compile-state.json"),
+		filepath.Join(s.projectDir, ".sage", "purpose-recompile-backup"),
+	} {
 		if _, statErr := os.Stat(file); statErr == nil {
 			backup := filepath.Join(backupRoot, fmt.Sprintf("file-%d", len(moves)))
 			if err := os.Rename(file, backup); err != nil {
@@ -108,7 +118,7 @@ func (s *Server) resetKnowledge() (int, int, error) {
 	}
 
 	empty := manifest.New()
-	if err := empty.Save(mfPath); err != nil {
+	if err := saveManifestAtomic(mfPath, empty); err != nil {
 		rollback()
 		return 0, 0, fmt.Errorf("write empty manifest: %w", err)
 	}
@@ -117,11 +127,11 @@ func (s *Server) resetKnowledge() (int, int, error) {
 		rollback()
 		return 0, 0, err
 	}
-	if err := compiler.GenerateWikiIndex(s.projectDir, s.cfg, empty, purpose); err != nil {
+	if err := compiler.GenerateWikiIndex(s.projectDir, cfg, empty, purpose); err != nil {
 		rollback()
 		return 0, 0, err
 	}
-	for _, sourceDir := range s.cfg.ResolveSources(s.projectDir) {
+	for _, sourceDir := range cfg.ResolveSources(s.projectDir) {
 		if err := os.MkdirAll(sourceDir, 0o755); err != nil {
 			rollback()
 			return 0, 0, fmt.Errorf("recreate source directory: %w", err)
@@ -135,7 +145,37 @@ func (s *Server) resetKnowledge() (int, int, error) {
 	if err := os.RemoveAll(backupRoot); err != nil {
 		return 0, 0, fmt.Errorf("remove reset backup: %w", err)
 	}
+	s.cfg = cfg
 	return sourceCount, conceptCount, nil
+}
+
+func saveManifestAtomic(path string, mf *manifest.Manifest) error {
+	data, err := json.MarshalIndent(mf, "", "  ")
+	if err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".manifest-reset-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0o644); err != nil {
+		temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
 }
 
 func safeResetTargets(projectDir string, targets []string) ([]string, error) {
