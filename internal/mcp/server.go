@@ -400,7 +400,16 @@ func (s *Server) handleStatus(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if err != nil {
 		return errorResult(err.Error()), nil
 	}
-	return textResult(wiki.FormatStatus(info)), nil
+	status := wiki.FormatStatus(info)
+	status += fmt.Sprintf("\nLLM provider: %s\nModels: summarize=%s, extract=%s, write=%s, lint=%s, query=%s\n",
+		s.cfg.API.Provider,
+		s.cfg.Models.Summarize,
+		s.cfg.Models.Extract,
+		s.cfg.Models.Write,
+		s.cfg.Models.Lint,
+		s.cfg.Models.Query,
+	)
+	return textResult(status), nil
 }
 
 func (s *Server) handleOntologyQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

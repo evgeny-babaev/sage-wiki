@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -150,6 +151,9 @@ func TestHandleStatus(t *testing.T) {
 	text := result.Content[0].(mcp.TextContent).Text
 	if text == "" {
 		t.Error("expected non-empty status")
+	}
+	if !strings.Contains(text, "LLM provider:") || !strings.Contains(text, "Models: summarize=") {
+		t.Fatalf("status must expose effective non-secret model configuration: %s", text)
 	}
 }
 
