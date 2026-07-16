@@ -131,26 +131,28 @@ func (s *Server) OntStore() *ontology.Store { return s.ont }
 // CallTool invokes a tool handler by name. Used for testing.
 func (s *Server) CallTool(ctx context.Context, name string, req mcp.CallToolRequest) *mcp.CallToolResult {
 	handlers := map[string]func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error){
-		"wiki_search":         s.handleSearch,
-		"wiki_read":           s.handleRead,
-		"wiki_status":         s.handleStatus,
-		"wiki_ontology_query": s.handleOntologyQuery,
-		"wiki_list":           s.handleList,
-		"wiki_get_purpose":    s.handleGetPurpose,
-		"wiki_set_purpose":    s.handleSetPurpose,
-		"wiki_add_source":     s.handleAddSource,
-		"wiki_write_summary":  s.handleWriteSummary,
-		"wiki_write_article":  s.handleWriteArticle,
-		"wiki_add_ontology":   s.handleAddOntology,
-		"wiki_learn":          s.handleLearn,
-		"wiki_commit":         s.handleCommit,
-		"wiki_push":           s.handlePush,
-		"wiki_compile_diff":   s.handleCompileDiff,
-		"wiki_compile":        s.handleCompile,
-		"wiki_lint":           s.handleLint,
-		"wiki_capture":        s.handleCapture,
-		"wiki_compile_topic":  s.handleCompileTopic,
-		"wiki_provenance":     s.handleProvenance,
+		"wiki_search":          s.handleSearch,
+		"wiki_read":            s.handleRead,
+		"wiki_status":          s.handleStatus,
+		"wiki_ontology_query":  s.handleOntologyQuery,
+		"wiki_list":            s.handleList,
+		"wiki_get_purpose":     s.handleGetPurpose,
+		"wiki_set_purpose":     s.handleSetPurpose,
+		"wiki_get_index_intro": s.handleGetIndexIntro,
+		"wiki_set_index_intro": s.handleSetIndexIntro,
+		"wiki_add_source":      s.handleAddSource,
+		"wiki_write_summary":   s.handleWriteSummary,
+		"wiki_write_article":   s.handleWriteArticle,
+		"wiki_add_ontology":    s.handleAddOntology,
+		"wiki_learn":           s.handleLearn,
+		"wiki_commit":          s.handleCommit,
+		"wiki_push":            s.handlePush,
+		"wiki_compile_diff":    s.handleCompileDiff,
+		"wiki_compile":         s.handleCompile,
+		"wiki_lint":            s.handleLint,
+		"wiki_capture":         s.handleCapture,
+		"wiki_compile_topic":   s.handleCompileTopic,
+		"wiki_provenance":      s.handleProvenance,
 	}
 	if h, ok := handlers[name]; ok {
 		r, _ := h(ctx, req)
@@ -214,6 +216,13 @@ func (s *Server) registerReadTools() {
 			mcp.WithDescription("Read the wiki purpose and its effective compilation hash."),
 		),
 		s.handleGetPurpose,
+	)
+
+	s.mcp.AddTool(
+		mcp.NewTool("wiki_get_index_intro",
+			mcp.WithDescription("Read the human-maintained project introduction embedded into generated wiki/index.md."),
+		),
+		s.handleGetIndexIntro,
 	)
 
 	// wiki_provenance
@@ -484,6 +493,14 @@ func (s *Server) handleGetPurpose(ctx context.Context, req mcp.CallToolRequest) 
 	}
 	data, _ := json.MarshalIndent(result, "", "  ")
 	return textResult(string(data)), nil
+}
+
+func (s *Server) handleGetIndexIntro(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	content, err := compiler.LoadIndexIntro(s.projectDir)
+	if err != nil {
+		return errorResult(err.Error()), nil
+	}
+	return textResult(content), nil
 }
 
 func (s *Server) handleProvenance(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

@@ -110,6 +110,38 @@ func TestPurposeTools(t *testing.T) {
 	}
 }
 
+func TestIndexIntroTools(t *testing.T) {
+	dir := t.TempDir()
+	wiki.InitGreenfield(dir, "test", "gemini-2.5-flash")
+	srv, err := NewServer(dir)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer srv.Close()
+
+	content := "## What this is\n\nShared project memory."
+	setResult := srv.CallTool(context.Background(), "wiki_set_index_intro", mcplib.CallToolRequest{
+		Params: mcplib.CallToolParams{Name: "wiki_set_index_intro", Arguments: map[string]any{"content": content}},
+	})
+	if setResult.IsError {
+		t.Fatalf("set index intro: %s", setResult.Content[0].(mcplib.TextContent).Text)
+	}
+	generated, err := os.ReadFile(filepath.Join(dir, "wiki", "index.md"))
+	if err != nil {
+		t.Fatalf("read generated index: %v", err)
+	}
+	if !strings.Contains(string(generated), content) {
+		t.Fatalf("generated index missing intro: %s", generated)
+	}
+
+	getResult := srv.CallTool(context.Background(), "wiki_get_index_intro", mcplib.CallToolRequest{
+		Params: mcplib.CallToolParams{Name: "wiki_get_index_intro"},
+	})
+	if getResult.IsError || getResult.Content[0].(mcplib.TextContent).Text != content {
+		t.Fatalf("unexpected get index intro response: %+v", getResult)
+	}
+}
+
 func TestWriteArticle(t *testing.T) {
 	dir := t.TempDir()
 	wiki.InitGreenfield(dir, "test", "gemini-2.5-flash")

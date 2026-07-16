@@ -48,6 +48,7 @@ The old manifest, SQLite database, summaries, concepts, and index are backed up 
 
 Every compile, including a no-op compile, generates `<output>/index.md`. The file is deterministic and contains:
 
+- the optional human-maintained `index_intro.md` project brief and reading guide;
 - a link to `purpose.md` when purpose-aware compilation is enabled;
 - sorted links to existing concept articles;
 - sorted links from source paths to existing summaries;
@@ -56,3 +57,5 @@ Every compile, including a no-op compile, generates `<output>/index.md`. The fil
 Links are relative to the configured output directory, so nested outputs remain portable. The generator omits missing artifacts instead of producing broken links.
 
 `wiki/index.md` is generated output. Do not edit it manually.
+
+Use the MCP tools `wiki_get_index_intro` and `wiki_set_index_intro` to manage the introduction remotely. Setting it regenerates `wiki/index.md` immediately and does not run an LLM compile.

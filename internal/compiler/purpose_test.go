@@ -143,3 +143,20 @@ func TestDiffNeverTreatsPurposeAsSource(t *testing.T) {
 		}
 	}
 }
+
+func TestDiffNeverTreatsIndexIntroAsSource(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, IndexIntroFilename), []byte("## About\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Sources: []config.Source{{Path: ".", Type: "article"}}}
+	diff, err := Diff(dir, cfg, manifest.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range diff.Added {
+		if filepath.Base(source.Path) == IndexIntroFilename {
+			t.Fatalf("index_intro.md was ingested as a source: %+v", source)
+		}
+	}
+}

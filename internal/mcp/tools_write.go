@@ -37,6 +37,14 @@ func (s *Server) registerWriteTools() {
 	)
 
 	s.mcp.AddTool(
+		mcplib.NewTool("wiki_set_index_intro",
+			mcplib.WithDescription("Replace index_intro.md and immediately regenerate wiki/index.md without an LLM compile."),
+			mcplib.WithString("content", mcplib.Required(), mcplib.Description("Complete Markdown introduction placed before generated navigation sections (max 100KB, no H1)")),
+		),
+		s.handleSetIndexIntro,
+	)
+
+	s.mcp.AddTool(
 		mcplib.NewTool("wiki_add_source",
 			mcplib.WithDescription("Add a source file to a source folder and update the manifest."),
 			mcplib.WithString("path", mcplib.Required(), mcplib.Description("File path relative to project root")),
@@ -143,35 +151,8 @@ func (s *Server) handleSetPurpose(ctx context.Context, req mcplib.CallToolReques
 		content += "\n"
 	}
 
-	path := filepath.Join(s.projectDir, compiler.PurposeFilename)
-	tmp, err := os.CreateTemp(s.projectDir, ".purpose-*.tmp")
-	if err != nil {
-		return errorResult(fmt.Sprintf("create purpose temp file: %v", err)), nil
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0644); err != nil {
-		tmp.Close()
-		return errorResult(fmt.Sprintf("set purpose permissions: %v", err)), nil
-	}
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		return errorResult(fmt.Sprintf("write purpose: %v", err)), nil
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return errorResult(fmt.Sprintf("sync purpose: %v", err)), nil
-	}
-	if err := tmp.Close(); err != nil {
-		return errorResult(fmt.Sprintf("close purpose: %v", err)), nil
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
-			return errorResult(fmt.Sprintf("replace purpose: %v", removeErr)), nil
-		}
-		if err := os.Rename(tmpPath, path); err != nil {
-			return errorResult(fmt.Sprintf("replace purpose: %v", err)), nil
-		}
+	if err := writeProjectMarkdown(s.projectDir, compiler.PurposeFilename, content); err != nil {
+		return errorResult(err.Error()), nil
 	}
 
 	purpose, err := compiler.LoadPurpose(s.projectDir)
@@ -184,6 +165,72 @@ func (s *Server) handleSetPurpose(ctx context.Context, req mcplib.CallToolReques
 		"hash":    purpose.Hash,
 	}, "", "  ")
 	return textResult(string(data)), nil
+}
+
+func (s *Server) handleSetIndexIntro(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	content, ok := req.GetArguments()["content"].(string)
+	if !ok {
+		return errorResult("content is required"), nil
+	}
+	if len([]byte(content)) > 100*1024 {
+		return errorResult("content exceeds 100KB limit"), nil
+	}
+	if strings.HasPrefix(strings.TrimSpace(content), "# ") {
+		return errorResult("index intro must not contain an H1; wiki/index.md generates the project title"), nil
+	}
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	if err := writeProjectMarkdown(s.projectDir, compiler.IndexIntroFilename, content); err != nil {
+		return errorResult(err.Error()), nil
+	}
+	mf, err := manifest.Load(filepath.Join(s.projectDir, ".manifest.json"))
+	if err != nil {
+		return errorResult(fmt.Sprintf("load manifest: %v", err)), nil
+	}
+	purpose, err := compiler.LoadPurpose(s.projectDir)
+	if err != nil {
+		return errorResult(err.Error()), nil
+	}
+	if err := compiler.GenerateWikiIndex(s.projectDir, s.cfg, mf, purpose); err != nil {
+		return errorResult(err.Error()), nil
+	}
+	return textResult("Updated index_intro.md and regenerated wiki/index.md"), nil
+}
+
+func writeProjectMarkdown(projectDir, filename, content string) error {
+	path := filepath.Join(projectDir, filename)
+	tmp, err := os.CreateTemp(projectDir, "."+filename+"-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create %s temp file: %w", filename, err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0644); err != nil {
+		tmp.Close()
+		return fmt.Errorf("set %s permissions: %w", filename, err)
+	}
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write %s: %w", filename, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("sync %s: %w", filename, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", filename, err)
+	}
+	if err := os.Rename(tmpPath, path); err == nil {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("replace %s: %w", filename, err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("replace %s: %w", filename, err)
+	}
+	return nil
 }
 
 func (s *Server) handleAddSource(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

@@ -60,7 +60,9 @@ func Diff(projectDir string, cfg *config.Config, mf *manifest.Manifest, forceMod
 		}
 
 		if err := WalkSourceDir(srcDir, func(absPath, relPath string, d os.DirEntry) error {
-			if filepath.Clean(absPath) == filepath.Clean(filepath.Join(projectDir, PurposeFilename)) {
+			cleanPath := filepath.Clean(absPath)
+			if cleanPath == filepath.Clean(filepath.Join(projectDir, PurposeFilename)) ||
+				cleanPath == filepath.Clean(filepath.Join(projectDir, IndexIntroFilename)) {
 				return nil
 			}
 			// Skip hidden files (.DS_Store etc.)

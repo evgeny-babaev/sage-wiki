@@ -117,6 +117,7 @@ func watchFsnotify(projectDir string, watcher *fsnotify.Watcher, sourcePaths []s
 	var timer *time.Timer
 	var lastTrigger string
 	purposePath := filepath.Clean(filepath.Join(projectDir, PurposeFilename))
+	indexIntroPath := filepath.Clean(filepath.Join(projectDir, IndexIntroFilename))
 
 	for {
 		select {
@@ -128,7 +129,8 @@ func watchFsnotify(projectDir string, watcher *fsnotify.Watcher, sourcePaths []s
 			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0 {
 				continue
 			}
-			if filepath.Clean(event.Name) != purposePath && !pathWithinRoots(event.Name, sourcePaths) {
+			cleanPath := filepath.Clean(event.Name)
+			if cleanPath != purposePath && cleanPath != indexIntroPath && !pathWithinRoots(event.Name, sourcePaths) {
 				continue
 			}
 
@@ -244,6 +246,12 @@ func scanSnapshot(projectDir string, sources []config.Source, ignore []string) m
 		snapshot[purposePath] = hash
 	} else {
 		snapshot[purposePath] = "missing"
+	}
+	indexIntroPath := filepath.Join(projectDir, IndexIntroFilename)
+	if hash := quickHash(indexIntroPath); hash != "" {
+		snapshot[indexIntroPath] = hash
+	} else {
+		snapshot[indexIntroPath] = "missing"
 	}
 
 	return snapshot

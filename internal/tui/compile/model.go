@@ -28,10 +28,10 @@ type fileStatus struct {
 
 // CompileCompleteMsg signals a compile finished.
 type CompileCompleteMsg struct {
-	result    *compiler.CompileResult
-	err       error
-	costInfo  string // formatted cost summary (single line)
-	tierInfo  string // formatted tier distribution (single line)
+	result   *compiler.CompileResult
+	err      error
+	costInfo string // formatted cost summary (single line)
+	tierInfo string // formatted tier distribution (single line)
 }
 
 // fileChangeMsg signals output files changed (for watch mode).
@@ -234,8 +234,8 @@ func (m Model) View() string {
 
 // --- Layout ---
 
-func (m Model) listWidth() int  { return m.width * 2 / 5 }
-func (m Model) previewWidth() int { return m.width - m.listWidth() }
+func (m Model) listWidth() int     { return m.width * 2 / 5 }
+func (m Model) previewWidth() int  { return m.width - m.listWidth() }
 func (m Model) contentHeight() int { return m.height - 3 }
 
 // --- Rendering ---
@@ -434,6 +434,9 @@ func (m Model) dirSnapshot() string {
 		})
 	}
 	if info, err := os.Stat(filepath.Join(m.projectDir, compiler.PurposeFilename)); err == nil {
+		total += info.Size() + info.ModTime().UnixNano()
+	}
+	if info, err := os.Stat(filepath.Join(m.projectDir, compiler.IndexIntroFilename)); err == nil {
 		total += info.Size() + info.ModTime().UnixNano()
 	}
 	return fmt.Sprintf("%d", total)
