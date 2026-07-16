@@ -141,6 +141,7 @@ func (s *Server) CallTool(ctx context.Context, name string, req mcp.CallToolRequ
 		"wiki_set_compile_models": s.handleSetCompileModels,
 		"wiki_get_index_intro":    s.handleGetIndexIntro,
 		"wiki_set_index_intro":    s.handleSetIndexIntro,
+		"wiki_reset_knowledge":    s.handleResetKnowledge,
 		"wiki_add_source":         s.handleAddSource,
 		"wiki_write_summary":      s.handleWriteSummary,
 		"wiki_write_article":      s.handleWriteArticle,

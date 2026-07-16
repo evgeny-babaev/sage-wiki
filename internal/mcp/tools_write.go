@@ -29,6 +29,14 @@ import (
 
 func (s *Server) registerWriteTools() {
 	s.mcp.AddTool(
+		mcplib.NewTool("wiki_reset_knowledge",
+			mcplib.WithDescription("Delete all sources and compiled knowledge while preserving config.yaml, purpose.md, and index_intro.md."),
+			mcplib.WithBoolean("confirm", mcplib.Required(), mcplib.Description("Must be true to confirm the destructive reset")),
+		),
+		s.handleResetKnowledge,
+	)
+
+	s.mcp.AddTool(
 		mcplib.NewTool("wiki_set_compile_models",
 			mcplib.WithDescription("Set extract/write models and stage-specific reasoning effort without changing other model stages."),
 			mcplib.WithString("extract_model", mcplib.Description("Model ID for concept extraction")),
