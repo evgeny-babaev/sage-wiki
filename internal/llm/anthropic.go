@@ -57,7 +57,7 @@ func newAnthropicProvider(apiKey string, baseURL string) *anthropicProvider {
 	return &anthropicProvider{apiKey: apiKey, baseURL: baseURL}
 }
 
-func (p *anthropicProvider) Name() string        { return "anthropic" }
+func (p *anthropicProvider) Name() string         { return "anthropic" }
 func (p *anthropicProvider) SupportsVision() bool { return true }
 
 func (p *anthropicProvider) formatBody(messages []Message, opts CallOpts, stream bool) (map[string]any, string) {
@@ -110,6 +110,7 @@ func (p *anthropicProvider) formatBody(messages []Message, opts CallOpts, stream
 	}
 
 	mergeExtraParams(body, p.extraParams, anthropicProtectedKeys)
+	mergeExtraParams(body, opts.ExtraParams, anthropicProtectedKeys)
 
 	return body, systemPrompt
 }
@@ -194,6 +195,7 @@ func (p *anthropicProvider) FormatCachedRequest(cacheID string, messages []Messa
 	}
 
 	mergeExtraParams(body, p.extraParams, anthropicProtectedKeys)
+	mergeExtraParams(body, opts.ExtraParams, anthropicProtectedKeys)
 
 	return p.makeRequest(body)
 }

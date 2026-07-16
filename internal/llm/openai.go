@@ -21,7 +21,7 @@ func newOpenAIProvider(apiKey string, baseURL string) *openaiProvider {
 	return &openaiProvider{apiKey: apiKey, baseURL: baseURL}
 }
 
-func (p *openaiProvider) Name() string        { return "openai" }
+func (p *openaiProvider) Name() string         { return "openai" }
 func (p *openaiProvider) SupportsVision() bool { return true }
 
 // setExtraParams satisfies extraParamsSetter.
@@ -53,21 +53,17 @@ func (p *openaiProvider) formatBody(messages []Message, opts CallOpts, stream bo
 	}
 	body["stream"] = stream
 
-	// Merge provider-specific extra params (e.g., enable_thinking, reasoning_effort).
+	// Merge provider-wide params first, then stage-specific call params.
 	// Protected keys cannot be overridden — they are structural to the request.
 	protected := map[string]bool{"model": true, "messages": true, "stream": true}
-	for k, v := range p.extraParams {
-		if protected[k] {
-			continue
-		}
-		body[k] = v
-	}
+	mergeExtraParams(body, p.extraParams, protected)
+	mergeExtraParams(body, opts.ExtraParams, protected)
 
 	// Token limit: if user explicitly set a token-limit key in extraParams, that
 	// takes precedence (it was already written above). Otherwise, use the correct
 	// parameter name for the model family based on CallOpts.MaxTokens.
-	_, hasMaxTokens := p.extraParams["max_tokens"]
-	_, hasMaxCompletion := p.extraParams["max_completion_tokens"]
+	_, hasMaxTokens := body["max_tokens"]
+	_, hasMaxCompletion := body["max_completion_tokens"]
 	if opts.MaxTokens > 0 && !hasMaxTokens && !hasMaxCompletion {
 		if useMaxCompletionTokens(opts.Model) {
 			body["max_completion_tokens"] = opts.MaxTokens
@@ -137,9 +133,9 @@ func (p *openaiProvider) ParseResponse(body []byte) (*Response, error) {
 		} `json:"choices"`
 		Model string `json:"model"`
 		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
+			PromptTokens        int `json:"prompt_tokens"`
+			CompletionTokens    int `json:"completion_tokens"`
+			TotalTokens         int `json:"total_tokens"`
 			PromptTokensDetails struct {
 				CachedTokens int `json:"cached_tokens"`
 			} `json:"prompt_tokens_details"`
@@ -176,6 +172,14 @@ func (p *openaiProvider) ParseResponse(body []byte) (*Response, error) {
 // useMaxCompletionTokens returns true for model families that require
 // max_completion_tokens instead of the legacy max_tokens parameter.
 func useMaxCompletionTokens(model string) bool {
+	// Gateways may namespace model IDs (openai/gpt-5.6-luna) and append
+	// routing parameters. Detect the underlying model family.
+	if slash := strings.LastIndex(model, "/"); slash >= 0 {
+		model = model[slash+1:]
+	}
+	if suffix := strings.IndexByte(model, '@'); suffix >= 0 {
+		model = model[:suffix]
+	}
 	if strings.HasPrefix(model, "gpt-5") {
 		return true
 	}

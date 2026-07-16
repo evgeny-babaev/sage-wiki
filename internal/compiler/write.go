@@ -42,6 +42,7 @@ type ArticleWriteOpts struct {
 	OutputDir          string
 	Client             *llm.Client
 	Model              string
+	ExtraParams        map[string]interface{}
 	MaxTokens          int
 	MaxParallel        int
 	MemStore           *memory.Store
@@ -173,7 +174,7 @@ func writeOneArticle(opts ArticleWriteOpts, concept ExtractedConcept, aliasMap m
 	resp, err := opts.Client.ChatCompletion([]llm.Message{
 		{Role: "system", Content: "You are a wiki author writing comprehensive, precise articles for a personal knowledge base. Use [[wikilinks]] for cross-references. Do not include YAML frontmatter."},
 		{Role: "user", Content: prompt},
-	}, llm.CallOpts{Model: opts.Model, MaxTokens: opts.MaxTokens})
+	}, llm.CallOpts{Model: opts.Model, MaxTokens: opts.MaxTokens, ExtraParams: opts.ExtraParams})
 	if err != nil {
 		result.Error = fmt.Errorf("llm call: %w", err)
 		return result

@@ -277,6 +277,11 @@ models:
   write: gemini-3-flash-preview
   lint: gemini-3-flash-preview
   query: gemini-3-flash-preview
+  # params:                    # optional provider params for a single stage
+  #   extract:
+  #     reasoning_effort: medium
+  #   write:
+  #     reasoning_effort: low
 
 # Embedding provider (optional — auto-detected from api provider)
 # Override to use a different provider for embeddings

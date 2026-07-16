@@ -247,6 +247,11 @@ models:
   write: %s
   lint: %s
   query: %s
+  # params:                    # optional provider params for a single stage
+  #   extract:
+  #     reasoning_effort: medium
+  #   write:
+  #     reasoning_effort: low
 
 # Embedding configuration (optional — auto-detected from api provider)
 # Override to use a different provider/model for embeddings

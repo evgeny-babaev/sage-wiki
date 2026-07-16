@@ -52,6 +52,22 @@ func ExtractConcepts(
 	concurrency int,
 	purpose ...string,
 ) ([]ExtractedConcept, error) {
+	return ExtractConceptsWithParams(summaries, existingConcepts, client, model, batchSize, maxTokens, concurrency, nil, purpose...)
+}
+
+// ExtractConceptsWithParams runs concept extraction with stage-specific
+// provider parameters such as reasoning_effort.
+func ExtractConceptsWithParams(
+	summaries []SummaryResult,
+	existingConcepts map[string]manifest.Concept,
+	client *llm.Client,
+	model string,
+	batchSize int,
+	maxTokens int,
+	concurrency int,
+	extraParams map[string]interface{},
+	purpose ...string,
+) ([]ExtractedConcept, error) {
 	var wikiPurpose string
 	if len(purpose) > 0 {
 		wikiPurpose = purpose[0]
@@ -152,7 +168,7 @@ func ExtractConcepts(
 			resp, err := client.ChatCompletion([]llm.Message{
 				{Role: "system", Content: "You are a concept extraction system for a knowledge wiki. Output valid JSON only."},
 				{Role: "user", Content: prompt},
-			}, llm.CallOpts{Model: model, MaxTokens: maxTokens})
+			}, llm.CallOpts{Model: model, MaxTokens: maxTokens, ExtraParams: extraParams})
 			if err != nil {
 				recordFailure(fmt.Errorf("batch %d: %w", b.index+1, err))
 				log.Error("concept extraction batch failed", "batch", b.index+1, "error", err)

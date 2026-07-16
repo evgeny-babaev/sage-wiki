@@ -11,6 +11,7 @@ import (
 	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/xoai/sage-wiki/internal/config"
 	"github.com/xoai/sage-wiki/internal/manifest"
 	"github.com/xoai/sage-wiki/internal/ontology"
 	"github.com/xoai/sage-wiki/internal/wiki"
@@ -107,6 +108,45 @@ func TestPurposeTools(t *testing.T) {
 	}
 	if !response.Enabled || response.Content != content+"\n" {
 		t.Fatalf("unexpected get purpose response: %+v", response)
+	}
+}
+
+func TestSetCompileModels(t *testing.T) {
+	dir := t.TempDir()
+	wiki.InitGreenfield(dir, "test", "gemini-2.5-flash")
+	srv, err := NewServer(dir)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer srv.Close()
+
+	result := srv.CallTool(context.Background(), "wiki_set_compile_models", mcplib.CallToolRequest{
+		Params: mcplib.CallToolParams{
+			Name: "wiki_set_compile_models",
+			Arguments: map[string]any{
+				"extract_model":            "openai/gpt-5.6-luna",
+				"extract_reasoning_effort": "medium",
+				"write_model":              "openai/gpt-5.6-luna",
+				"write_reasoning_effort":   "low",
+			},
+		},
+	})
+	if result.IsError {
+		t.Fatalf("set compile models: %s", result.Content[0].(mcplib.TextContent).Text)
+	}
+
+	cfg, err := config.Load(filepath.Join(dir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("Load config: %v", err)
+	}
+	if cfg.Models.Extract != "openai/gpt-5.6-luna" || cfg.Models.Write != "openai/gpt-5.6-luna" {
+		t.Fatalf("unexpected models: %+v", cfg.Models)
+	}
+	if cfg.Models.ParamsFor("extract")["reasoning_effort"] != "medium" {
+		t.Fatalf("unexpected extract params: %+v", cfg.Models.ParamsFor("extract"))
+	}
+	if cfg.Models.ParamsFor("write")["reasoning_effort"] != "low" {
+		t.Fatalf("unexpected write params: %+v", cfg.Models.ParamsFor("write"))
 	}
 }
 

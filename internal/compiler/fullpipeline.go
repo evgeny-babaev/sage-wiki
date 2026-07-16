@@ -246,7 +246,7 @@ func runFullPipeline(sources []SourceInfo, opts FullPipelineOpts) *FullPipelineR
 		extCacheID, _ = client.SetupCache("You are an expert knowledge organizer. Extract structured concepts from source summaries.", extractModel)
 	}
 	progress.StartPhase("Pass 2: Extract concepts", len(successfulSummaries))
-	concepts, err := ExtractConcepts(successfulSummaries, mf.Concepts, client, extractModel, cfg.Compiler.ExtractBatchSize, cfg.Compiler.ExtractMaxTokens, cfg.Compiler.MaxParallel, opts.Purpose)
+	concepts, err := ExtractConceptsWithParams(successfulSummaries, mf.Concepts, client, extractModel, cfg.Compiler.ExtractBatchSize, cfg.Compiler.ExtractMaxTokens, cfg.Compiler.MaxParallel, cfg.Models.ParamsFor("extract"), opts.Purpose)
 	if err != nil {
 		progress.ItemError("concept extraction", err)
 		result.Errors++
@@ -348,6 +348,7 @@ func runFullPipeline(sources []SourceInfo, opts FullPipelineOpts) *FullPipelineR
 		OutputDir:          cfg.Output,
 		Client:             client,
 		Model:              writeModel,
+		ExtraParams:        cfg.Models.ParamsFor("write"),
 		MaxTokens:          articleMaxTokens,
 		MaxParallel:        cfg.Compiler.MaxParallel,
 		MemStore:           opts.MemStore,

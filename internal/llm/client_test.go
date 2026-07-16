@@ -125,8 +125,8 @@ func TestGeminiFormat(t *testing.T) {
 					},
 				}},
 			},
-			"usageMetadata":  map[string]int{"totalTokenCount": 15},
-			"modelVersion": "gemini-2.5-flash",
+			"usageMetadata": map[string]int{"totalTokenCount": 15},
+			"modelVersion":  "gemini-2.5-flash",
 		})
 	}))
 	defer server.Close()
@@ -367,6 +367,41 @@ func TestExtraParamsMergedIntoRequest(t *testing.T) {
 	}
 }
 
+func TestCallExtraParamsOverrideProviderDefaults(t *testing.T) {
+	var receivedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&receivedBody)
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": "ok"}}},
+			"model":   "gpt-5.6-luna",
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient("openai-compatible", "test-key", server.URL, 1000, map[string]interface{}{
+		"reasoning_effort": "none",
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_, err = client.ChatCompletion([]Message{{Role: "user", Content: "test"}}, CallOpts{
+		Model: "openai/gpt-5.6-luna",
+		ExtraParams: map[string]interface{}{
+			"reasoning_effort": "medium",
+			"model":            "must-not-override",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ChatCompletion: %v", err)
+	}
+	if got := receivedBody["reasoning_effort"]; got != "medium" {
+		t.Fatalf("reasoning_effort = %v, want medium", got)
+	}
+	if got := receivedBody["model"]; got != "openai/gpt-5.6-luna" {
+		t.Fatalf("model = %v", got)
+	}
+}
+
 func TestMaxCompletionTokensForNewModels(t *testing.T) {
 	tests := []struct {
 		model   string
@@ -379,6 +414,9 @@ func TestMaxCompletionTokensForNewModels(t *testing.T) {
 		{"gpt-5", "max_completion_tokens"},
 		{"gpt-5.4-mini", "max_completion_tokens"},
 		{"gpt-5.5", "max_completion_tokens"},
+		{"gpt-5.6-luna", "max_completion_tokens"},
+		{"openai/gpt-5.6-luna", "max_completion_tokens"},
+		{"openai/gpt-5.6-luna@provider=openai", "max_completion_tokens"},
 		{"o1", "max_completion_tokens"},
 		{"o1-mini", "max_completion_tokens"},
 		{"o1-preview", "max_completion_tokens"},

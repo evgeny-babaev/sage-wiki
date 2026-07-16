@@ -266,6 +266,11 @@ models:
   write: gemini-3-flash-preview
   lint: gemini-3-flash-preview
   query: gemini-3-flash-preview
+  # params:                    # параметры провайдера только для отдельного этапа
+  #   extract:
+  #     reasoning_effort: medium
+  #   write:
+  #     reasoning_effort: low
 
 # Провайдер эмбеддингов (опционально — автоопределение из провайдера api)
 # Переопределите для использования другого провайдера для эмбеддингов

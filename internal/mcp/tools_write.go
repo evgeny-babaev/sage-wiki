@@ -29,6 +29,17 @@ import (
 
 func (s *Server) registerWriteTools() {
 	s.mcp.AddTool(
+		mcplib.NewTool("wiki_set_compile_models",
+			mcplib.WithDescription("Set extract/write models and stage-specific reasoning effort without changing other model stages."),
+			mcplib.WithString("extract_model", mcplib.Description("Model ID for concept extraction")),
+			mcplib.WithString("extract_reasoning_effort", mcplib.Description("Reasoning effort for extraction: none, minimal, low, medium, high, xhigh, max, ultra")),
+			mcplib.WithString("write_model", mcplib.Description("Model ID for article writing")),
+			mcplib.WithString("write_reasoning_effort", mcplib.Description("Reasoning effort for writing: none, minimal, low, medium, high, xhigh, max, ultra")),
+		),
+		s.handleSetCompileModels,
+	)
+
+	s.mcp.AddTool(
 		mcplib.NewTool("wiki_set_purpose",
 			mcplib.WithDescription("Replace the project-level purpose.md used by summarize, extract, and write. The next full compile rebuilds purpose-dependent outputs."),
 			mcplib.WithString("content", mcplib.Required(), mcplib.Description("Complete Markdown content for purpose.md (max 100KB)")),
@@ -136,6 +147,68 @@ func (s *Server) registerWriteTools() {
 		),
 		s.handleCompileTopic,
 	)
+}
+
+var compileModelIDRe = regexp.MustCompile(`^[A-Za-z0-9._:/@?&=+,-]+$`)
+
+func (s *Server) handleSetCompileModels(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	args := req.GetArguments()
+	updates := make(map[string]config.ModelStageUpdate)
+	validEffort := map[string]bool{
+		"none": true, "minimal": true, "low": true, "medium": true,
+		"high": true, "xhigh": true, "max": true, "ultra": true,
+	}
+
+	for _, stage := range []string{"extract", "write"} {
+		model, hasModel := args[stage+"_model"].(string)
+		effort, hasEffort := args[stage+"_reasoning_effort"].(string)
+		model = strings.TrimSpace(model)
+		effort = strings.TrimSpace(strings.ToLower(effort))
+		if !hasModel && !hasEffort {
+			continue
+		}
+		if hasModel && (model == "" || len(model) > 200 || !compileModelIDRe.MatchString(model)) {
+			return errorResult(fmt.Sprintf("invalid %s_model", stage)), nil
+		}
+		if hasEffort && !validEffort[effort] {
+			return errorResult(fmt.Sprintf("invalid %s_reasoning_effort", stage)), nil
+		}
+		update := config.ModelStageUpdate{Model: model}
+		if hasEffort {
+			update.ExtraParams = map[string]string{"reasoning_effort": effort}
+		}
+		updates[stage] = update
+	}
+	if len(updates) == 0 {
+		return errorResult("at least one model or reasoning effort is required"), nil
+	}
+
+	configPath := filepath.Join(s.projectDir, "config.yaml")
+	original, err := os.ReadFile(configPath)
+	if err != nil {
+		return errorResult(fmt.Sprintf("read config: %v", err)), nil
+	}
+	if err := config.UpdateModelStages(configPath, updates); err != nil {
+		return errorResult(err.Error()), nil
+	}
+	updated, err := config.Load(configPath)
+	if err != nil {
+		_ = os.WriteFile(configPath, original, 0644)
+		return errorResult(fmt.Sprintf("updated config is invalid: %v", err)), nil
+	}
+	s.cfg = updated
+
+	data, _ := json.MarshalIndent(map[string]any{
+		"extract": map[string]any{
+			"model":  updated.Models.Extract,
+			"params": updated.Models.ParamsFor("extract"),
+		},
+		"write": map[string]any{
+			"model":  updated.Models.Write,
+			"params": updated.Models.ParamsFor("write"),
+		},
+	}, "", "  ")
+	return textResult(string(data)), nil
 }
 
 func (s *Server) handleSetPurpose(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

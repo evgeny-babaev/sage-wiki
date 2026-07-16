@@ -58,11 +58,20 @@ type APIConfig struct {
 }
 
 type ModelsConfig struct {
-	Summarize string `yaml:"summarize"`
-	Extract   string `yaml:"extract"`
-	Write     string `yaml:"write"`
-	Lint      string `yaml:"lint"`
-	Query     string `yaml:"query"`
+	Summarize string                            `yaml:"summarize"`
+	Extract   string                            `yaml:"extract"`
+	Write     string                            `yaml:"write"`
+	Lint      string                            `yaml:"lint"`
+	Query     string                            `yaml:"query"`
+	Params    map[string]map[string]interface{} `yaml:"params,omitempty"`
+}
+
+// ParamsFor returns provider-specific request parameters for one model stage.
+func (m ModelsConfig) ParamsFor(stage string) map[string]interface{} {
+	if m.Params == nil {
+		return nil
+	}
+	return m.Params[stage]
 }
 
 type EmbedConfig struct {

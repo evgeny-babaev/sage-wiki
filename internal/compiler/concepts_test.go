@@ -81,6 +81,29 @@ func TestExtractConcepts_SuccessReturnsConcepts(t *testing.T) {
 	}
 }
 
+func TestExtractConceptsWithParamsForwardsStageReasoning(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&body)
+		json.NewEncoder(w).Encode(conceptChoiceResponse())
+	}))
+	defer server.Close()
+
+	client, err := llm.NewClient("openai-compatible", "fake-key", server.URL, -1)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	summaries := []SummaryResult{{SourcePath: "raw/a.md", Summary: "A valid summary."}}
+	_, err = ExtractConceptsWithParams(summaries, nil, client, "openai/gpt-5.6-luna", 20, 8192, 1,
+		map[string]interface{}{"reasoning_effort": "medium"})
+	if err != nil {
+		t.Fatalf("ExtractConceptsWithParams: %v", err)
+	}
+	if got := body["reasoning_effort"]; got != "medium" {
+		t.Fatalf("reasoning_effort = %v", got)
+	}
+}
+
 // TestExtractConcepts_ParseErrorReturnsError pins the parse-error failure exit:
 // non-empty but unparseable content → every batch records a failure → total
 // failure surfaces as an error (not a silent empty extraction).

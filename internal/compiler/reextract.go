@@ -101,7 +101,7 @@ func ReExtract(projectDir string) (*CompileResult, error) {
 	}
 
 	log.Info("Pass 2: extracting concepts", "from_summaries", len(summaries))
-	concepts, err := ExtractConcepts(summaries, mf.Concepts, client, extractModel, cfg.Compiler.ExtractBatchSize, cfg.Compiler.ExtractMaxTokens, cfg.Compiler.MaxParallel, purpose.Text)
+	concepts, err := ExtractConceptsWithParams(summaries, mf.Concepts, client, extractModel, cfg.Compiler.ExtractBatchSize, cfg.Compiler.ExtractMaxTokens, cfg.Compiler.MaxParallel, cfg.Models.ParamsFor("extract"), purpose.Text)
 	if err != nil {
 		return nil, fmt.Errorf("re-extract: concept extraction: %w", err)
 	}
@@ -130,6 +130,7 @@ func ReExtract(projectDir string) (*CompileResult, error) {
 			OutputDir:          cfg.Output,
 			Client:             client,
 			Model:              writeModel,
+			ExtraParams:        cfg.Models.ParamsFor("write"),
 			MaxTokens:          articleMaxTokens,
 			MaxParallel:        cfg.Compiler.MaxParallel,
 			MemStore:           memStore,
